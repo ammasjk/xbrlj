@@ -1,0 +1,430 @@
+/*
+ * Copyright (C) Jayakumar Muthukumarasamy.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+syntax = "proto3";
+
+/* Compile this using the script proto_compile.sh in src/main/scripts */
+/* The protobuf definitions have not been updated for some time. This is not usable currently */
+
+option java_package = "io.datanapis.xbrl.model";
+option java_outer_classname = "Xbrl";
+
+/*
+ * This message represents an XML namespace
+ */
+message Namespace {
+  /* The URI for this namespace */
+  string uri = 1;
+
+  /* The prefix for this namespace */
+  string prefix = 2;
+}
+
+/*
+ * This message represents a qualified name in XML
+ */
+message QName {
+  /* The name that is qualified */
+  string name = 1;
+
+  /* The namespace qualifying it */
+  Namespace namespace = 2;
+}
+
+/*
+ * This message represents a label in an XBRL instance. A label provides a contextual, language-specific,
+ * human readable name for a Concept
+ */
+message Label {
+  /* The id of this label */
+  string id = 1;
+
+  /* The label value of this label. This serves as a foreign key when connecting labels to concepts */
+  string label = 2;
+  string title = 3;
+
+  /*
+   * The role for this label. This is important. A given concept can have multiple labels even in the same
+   * language. The role along with the preferredRole tag in the presentationArc will specify the label that
+   * should be used.
+   */
+  string role = 4;
+
+  /* The type, usually a resource */
+  string type = 5;
+
+  /* The language for this label, usually en-US */
+  string lang = 6;
+
+  /* The actual value of this label */
+  string value = 7;
+}
+
+/*
+ * This message represents a Location in an XBRL instance.
+ */
+message Location {
+  /* The file#hash combination that serves as a key for uniquely identifying this location */
+  string href = 1;
+
+  /* The label naming the location. This serves as a referencable key */
+  string label = 2;
+
+  /* The type of the location, usually "locator" */
+  string type = 3;
+}
+
+/*
+ * A concept. Concepts may be abstract or not. Facts can only be reported against non-abstract concepts.
+ * us-gaap, defines a standard taxonomy of concepts. However, different companies usually extend this and
+ * define company specific concepts as well.
+ */
+message Concept {
+  /* The balance type */
+  enum Balance {
+    NONE = 0;
+    DEBIT = 1;
+    CREDIT = 2;
+  }
+
+  /* The period type */
+  enum Period {
+    NO_PERIOD = 0;  // Not sure if this is even possible
+    DURATION = 1;
+    INSTANT = 2;
+  }
+
+  /* Namespace for this concept */
+  Namespace namespace = 1;
+
+  /* The name of this concept */
+  string name = 2;
+
+  /* The key for this concept - of the format filename#hash where has is built from prefix and name */
+  string key = 3;
+
+  /* The id for this concept */
+  string id = 4;
+
+  /* Used very infrequently, mostly in e.g. dei:NoTradingSymbolFlag */
+  string fixed = 5;
+
+  /* Is this an abstract concept */
+  bool abstractConcept = 6;
+
+  /* Is this nillable */
+  bool nillable = 7;
+
+  /* substitution group, normally item */
+  QName substitutionGroup = 8;
+
+  /* The type of this concept */
+  QName type = 9;
+
+  Balance balance = 10;
+
+  Period period = 11;
+
+  /* Not sure what this one is */
+  string typedDomainRef = 12;
+
+  /* Date when this was deprecated */
+  string deprecatedDate = 13;
+
+  /* The labels for this concept. This is instance specific making this taxonomy specific to an instance */
+  repeated Label label = 14;
+}
+
+message ArcroleType {
+  string id = 1;
+
+  /* The URI for this arcrole */
+  string arcroleURI = 2;
+
+  /* Are cycles allowed. We are not using this information yet. */
+  string cyclesAllowed = 3;
+
+  /* A description of this role */
+  string definition = 4;
+}
+
+message Arc {
+  /* The order for this arc */
+  float order = 1;
+
+  /* The type of arc, usually hypercube-dimension, dimension-domain, domain-member and dimension-default */
+  string arcroleUri = 2;
+
+  /* The source of this arc */
+  string from = 3;
+
+  /* The destination of this arc */
+  string to = 4;
+
+  /* The type of this arc, usually just "arc" */
+  string type = 5;
+
+  /*
+   * Mechanisms for overriding different arcs, use can either be "optional" or "prohibited" and priority defines
+   * the priority in the presence of conflicting arcs. Haven't seen these be used that much but have seen them
+   * in some instances.
+   */
+  int32 priority = 6;
+  string use = 7;
+
+  /* The title for this arc */
+  string title = 8;
+}
+
+message DefinitionArc {
+  /* Basic attributes for this arc. Protobuf doesn't support inheritance. Hence, using containment. */
+  Arc arc = 1;
+
+  /* Is this dimension closed. We are not using it much for now */
+  bool closed = 2;
+
+  /* Not sure what this is */
+  string contextElement = 3;
+
+  /* Children of this arc i.e. base.to == child.from */
+  repeated DefinitionArc child = 4;
+}
+
+message CalculationArc {
+  /* Basic attributes for this arc. Protobuf doesn't support inheritance. Hence, using containment. */
+  Arc arc = 1;
+
+  /* Weight for this arc, either +1 or -1 for us-gaap */
+  double weight = 2;
+
+  /* Children of this arc i.e. base.to == child.from */
+  repeated CalculationArc child = 3;
+}
+
+message PresentationArc {
+  /* Basic attributes for this arc. Protobuf doesn't support inheritance. Hence, using containment. */
+  Arc arc = 1;
+
+  /* The preferred URI to use for this arc */
+  string preferredLabel = 2;
+
+  /* Children of this arc i.e. base.to == child.from */
+  repeated PresentationArc child = 3;
+}
+
+/* A base link. A base link cannot exist by itself. */
+message Link {
+  /* The roleUri for this link */
+  string roleUri = 1;
+
+  /* The type as defined by the XBRL specification. Usually, "extended" */
+  string type = 2;
+
+  /* Optional title describing the link */
+  string title = 3;
+
+  /* Locations within this link that are either the source or destination of an arc */
+  repeated Location location = 4;
+}
+
+message DefinitionLink {
+  /* Basic link attributes */
+  Link link = 1;
+
+  /* The id attribute */
+  string id = 2;
+
+  /* root arcs within this DefinitionLink */
+  repeated DefinitionArc root = 3;
+}
+
+message CalculationLink {
+  /* Basic link attributes */
+  Link link = 1;
+
+  /* root arcs within this CalculationLink */
+  repeated CalculationArc root = 3;
+}
+
+message PresentationLink {
+  /* Basic link attributes */
+  Link link = 1;
+
+  /* root arcs within this PresentationLink */
+  repeated PresentationArc root = 2;
+}
+
+message RoleType {
+  /* Is this a reportable roleType */
+  bool reportable = 1;
+  string id = 2;
+
+  /* The URI for this role */
+  string roleURI = 3;
+
+  /* A description of this role */
+  string definition = 4;
+}
+
+message ExplicitMember {
+  QName dimension = 1;
+  QName member = 2;
+}
+
+message TypedMember {
+  QName dimension = 1;
+  string member = 2;
+}
+
+message Entity {
+  string scheme = 1;
+  string id = 2;
+  repeated ExplicitMember explicitMember = 3;
+  repeated TypedMember typedMember = 4;
+}
+
+message Instant {
+  string date = 1;
+}
+
+message Duration {
+  string startDate = 1;
+  string endDate = 2;
+}
+
+message Context {
+  string id = 1;
+  string namespaceUri = 2;
+  Entity entity = 3;
+  oneof period {
+    Instant instant = 4;
+    Duration duration = 5;
+  }
+}
+
+message Measure {
+  string unit = 1;
+}
+
+message Measures {
+  repeated Measure measure = 1;
+}
+
+message Fraction {
+  Measure numerator = 1;
+  Measure denominator = 2;
+}
+
+message Unit {
+  string id = 1;
+  oneof unit {
+    Measures measures = 2;
+    Fraction fraction = 3;
+  }
+}
+
+message Footnote {
+  string id = 1;
+  string label = 2;
+  string role = 3;
+  string type = 4;
+  string lang = 5;
+  string value = 6;
+}
+
+message Fact {
+  QName concept = 1;
+  string id = 2;
+  string contextId = 3;
+  string unitId = 4;
+  oneof value {
+    int64 longValue = 5;
+    double doubleValue = 6;
+    string stringValue = 7;
+  }
+  int32 decimals = 8;
+  bool nil = 9;
+  string footnoteId = 10;
+}
+
+message Taxonomy {
+  repeated ArcroleType arcroleType = 1;
+  repeated RoleType roleType = 2;
+  repeated Concept concept = 3;
+}
+
+message DocumentInformation {
+  string fiscalPeriod = 1;
+  int32 fiscalYear = 2;
+  bool annualReport = 3;
+  bool quarterlyReport = 4;
+  bool transitionReport = 5;
+  string documentType = 6;
+  string periodEndDate = 7;
+}
+
+message EntityInformation {
+  string centralIndexKey = 1;
+  string fileNumber = 2;
+  string registrantName = 3;
+  string incorporationStateCountryCode = 4;
+  string taxIdentificationNumber = 5;
+  string addressLine1 = 6;
+  string cityOrTown = 7;
+  string stateOrProvince = 8;
+  string postalZipCode = 9;
+  string country = 10;
+  string countryCode = 11;
+  string areaCode = 12;
+  string localPhoneNumber = 13;
+  string currentReportingStatus = 14;
+  string filerCategory = 15;
+  bool emergingGrowthCompany = 16;
+  string wellKnownSeasonedIssuer = 17;
+  string voluntaryFilers = 18;
+  int64 publicFloat = 19;
+}
+
+message SecurityInformation {
+  string security12bTitle = 1;
+  string tradingSymbol = 2;
+  string securityExchangeName = 3;
+}
+
+message Dei {
+  bool amendmentFlag = 2;
+  string amendmentDescription = 3;
+  string yearEndDate = 4;
+  string primaryContext = 5;
+  repeated string ticker = 6;
+  DocumentInformation documentInformation = 7;
+  EntityInformation entityInformation = 8;
+  map<string,int64> sharesOutstanding = 9;
+  map<string,SecurityInformation> securityInformation = 10;
+}
+
+message Instance {
+  string dateFiled = 1;
+  Taxonomy dts = 2;
+  repeated CalculationLink calculationLink = 3;
+  repeated PresentationLink presentationLink = 4;
+  repeated DefinitionLink definitionLink = 5;
+  repeated Context context = 6;
+  repeated Unit unit = 7;
+  Dei dei = 8;
+  repeated Footnote footnote = 9;
+  repeated Fact fact = 10;
+  string xbrlUrl = 11;
+}
