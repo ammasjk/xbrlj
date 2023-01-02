@@ -230,7 +230,7 @@ public class XbrlTest {
     @Test
     @Category(io.datanapis.test.SlowTest.class)
     public void testSingle() throws Exception {
-        testSingle(XbrlInstancePath.TEST_10, true);
+        testSingle(XbrlInstancePath.JPM_20210930_ZIP, false);
     }
 
     @Test
