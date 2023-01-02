@@ -148,7 +148,7 @@ public class XbrlTest {
 
         dts.logStats();
         System.out.printf("Cache stats: [request: %d, network: %d, hit: %d]\n",
-                reader.requestCount(), reader.networkCount(), reader.hitCount());
+                XbrlReader.requestCount(), XbrlReader.networkCount(), XbrlReader.hitCount());
         System.out.printf("  Definition links: [%d]\n", definitionLinks);
         System.out.printf("Presentation Links: [%d]\n", presentationLinks);
         System.out.printf(" Calculation Links: [%d]\n", calculationLinks);
@@ -272,7 +272,7 @@ public class XbrlTest {
 
         String path = asJson ? instancePath.getJsonPath() : instancePath.getFilePath();
         PrintWriter writer = new PrintWriter(new FileWriter(path));
-        PrettyPrinter printer = new PrettyPrinter(writer, true, false, false);
+        PrettyPrinter printer = new PrettyPrinter(writer, true, true, false);
         PresentationSerializer presentationSerializer = new PresentationSerializer(true);
         PresentationNetwork fileWriter = new PresentationNetwork(instance, asJson ? presentationSerializer : printer);
 

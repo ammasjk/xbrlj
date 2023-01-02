@@ -28,7 +28,7 @@ Core Java library that implements XBRL parsing and analysis. To get started,
             fileWriter.process(roleType);
         }
    
-   Here is a sample output in json (https://datanapis.io/JPM_20210930_ZIP.json) and text (https://datanapis.io/JPM_20210930_ZIP.txt)
+   Here is a sample output in json (https://datanapis.io/JPM_20210930_ZIP.json), text (https://datanapis.io/JPM_20210930_ZIP.txt) and text with labels (https://datanapis.io/JPM_20210930_ZIP_with_labels.txt)
 
 
 5. You can do many more things such as exploring the concepts and facts used by the XbrlInstance, exploring the DefinitionNetwork, the CalculationNetwork, validating calculations, exploring the Discoverable Taxonomy Set, etc.
