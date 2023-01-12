@@ -150,4 +150,13 @@
             </build>
         </profile>
     </profiles>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Apache Maven Packages</name>
+            <url>https://maven.pkg.github.com/ammasjk/xbrlj</url>
+        </repository>
+    </distributionManagement>
+
 </project>
