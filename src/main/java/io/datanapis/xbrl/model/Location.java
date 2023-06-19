@@ -19,6 +19,8 @@ import io.datanapis.xbrl.TagNames;
 import io.datanapis.xbrl.utils.Utils;
 import org.dom4j.Element;
 
+import java.util.Objects;
+
 public final class Location {
     /**
      * The source url where this location was defined.
@@ -70,7 +72,7 @@ public final class Location {
 
         Location location = (Location) o;
 
-        return href.equals(location.href);
+        return href.equals(location.href) && Objects.equals(label, ((Location) o).label);
     }
 
     @Override
