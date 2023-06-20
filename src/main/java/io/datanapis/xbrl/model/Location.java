@@ -15,9 +15,13 @@
  */
 package io.datanapis.xbrl.model;
 
+import com.google.common.hash.HashCode;
 import io.datanapis.xbrl.TagNames;
 import io.datanapis.xbrl.utils.Utils;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.dom4j.Element;
+
+import java.util.Objects;
 
 public final class Location {
     /**
@@ -70,12 +74,12 @@ public final class Location {
 
         Location location = (Location) o;
 
-        return href.equals(location.href);
+        return Objects.equals(href, location.href) && Objects.equals(label, location.label);
     }
 
     @Override
     public int hashCode() {
-        return href.hashCode();
+        return new HashCodeBuilder().append(href).append(label).hashCode();
     }
 
     public static Location fromElement(String sourceUrl, Element element) {
