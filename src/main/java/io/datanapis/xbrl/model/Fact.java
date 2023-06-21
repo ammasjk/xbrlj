@@ -394,7 +394,7 @@ public final class Fact {
                 double doubleValue = Double.parseDouble(fact.getValue()) * multiplier * sign;
 
                 /* Check if the double is actually a long and treat it as such if it is */
-                if (doubleValue - (long)doubleValue < 0.0001) {
+                if (Math.abs(doubleValue - (long)doubleValue) < 0.0001) {
                     fact.longValue = (long)doubleValue;
                 } else {
                     fact.doubleValue = doubleValue;
