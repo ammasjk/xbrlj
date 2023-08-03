@@ -186,6 +186,9 @@ public class DiscoverableTaxonomySet {
         }
     }
 
+    private static final String ECD_SUB_2023_XSD = "ecd-sub-2023.xsd";
+    private static final String ECD_2023_XSD_URL = "https://xbrl.sec.gov/ecd/2023/ecd-2023.xsd";
+
     /**
      * Collect all the urls that will need to be traversed in the order in which they need to be traversed.
      *
@@ -218,6 +221,10 @@ public class DiscoverableTaxonomySet {
                         // Handle any schema imports
                         //
                         String schemaLocation = schemaLocationToUrl(child.attributeValue(TagNames.SCHEMA_LOCATION_TAG));
+                        if (schemaLocation.contains(ECD_SUB_2023_XSD)) {
+                            log.debug("Adding [{}] to queue", ECD_2023_XSD_URL);
+                            todo.add(new SchemaLocation(resolver.getAbsolutePath(url.absolutePath, ECD_2023_XSD_URL)));
+                        }
                         log.debug("Adding [{}] to queue", schemaLocation);
                         todo.add(new SchemaLocation(resolver.getAbsolutePath(url.absolutePath, schemaLocation)));
                     } else if (childName.equals(TagNames.ANNOTATION_TAG)) {
