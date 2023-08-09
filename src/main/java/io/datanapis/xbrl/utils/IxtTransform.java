@@ -48,7 +48,7 @@ public class IxtTransform {
             Pattern.compile("^[ \\t\\n\\r]*([-]|\u002D|\u058A|\u05BE|\u2010|\u2011|\u2012|\u2013|\u2014|\u2015|\uFE58|\uFE63|\uFF0D)[ \\t\\n\\r]*$");
 
     private static final Pattern NUM_DOT_DECIMAL =
-            Pattern.compile("^[ \\t\\n\\r]*[0-9]{1,3}([, \u00A0]?[0-9]{3})*(\\.[0-9]+)?[ \\t\\n\\r]*$");
+            Pattern.compile("^[ \\t\\n\\r]*[0-9]{1,3}([, \u00A0]?[0-9]{3})*(\\.[0-9]+)?[ \\t\\n\\r]*$|^[ \\t\\n\\r]*(\\.[0-9]+)[ \\t\\n\\r]*$");
 
     private static final Pattern NUM_DOT_DECIMAL_IN =
             Pattern.compile("^(([0-9]{1,2}[, \u00A0])?([0-9]{2}[, \u00A0])*[0-9]{3})([.][0-9]+)?$|^([0-9]+)([.][0-9]+)?$");
