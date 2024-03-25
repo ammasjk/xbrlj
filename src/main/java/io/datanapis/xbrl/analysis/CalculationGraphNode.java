@@ -17,8 +17,11 @@ package io.datanapis.xbrl.analysis;
 
 import io.datanapis.xbrl.model.*;
 import io.datanapis.xbrl.model.arc.CalculationArc;
+import io.datanapis.xbrl.model.arc.DefinitionArc;
 
 import java.io.PrintWriter;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class CalculationGraphNode extends GraphNode<CalculationArc> {
     CalculationGraphNode(Concept concept, CalculationArc arc) {
@@ -30,5 +33,24 @@ public class CalculationGraphNode extends GraphNode<CalculationArc> {
         writer.printf("%s [%s] = [%s] [%4.1f] [%s] [%.2f]:\n",
                 prefix, getConcept().getQualifiedName(), getConcept().getBalance().toString(),
                 arc.getWeight(), arc.getArcrole().getArcroleURI(), arc.getOrder());
+    }
+
+    void walk(CalculationNetworkConsumer consumer, Deque<CalculationGraphNode> path) {
+        for (GraphNode<CalculationArc> graphNode : this.getOutLinks()) {
+            CalculationGraphNode node = (CalculationGraphNode)graphNode;
+            consumer.nodeStart(node, path);
+            if (node.hasChildren()) {
+                path.push(node);
+                node.walk(consumer, path);
+                path.pop();
+            }
+            consumer.nodeEnd(node, path);
+        }
+    }
+
+    public void walk(CalculationNetworkConsumer consumer) {
+        Deque<CalculationGraphNode> path = new ArrayDeque<>();
+        path.push(this);
+        walk(consumer, path);
     }
 }

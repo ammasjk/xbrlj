@@ -20,7 +20,10 @@ import io.datanapis.xbrl.DiscoverableTaxonomySet;
 import io.datanapis.xbrl.XbrlInstance;
 import io.datanapis.xbrl.XbrlReader;
 import io.datanapis.xbrl.analysis.*;
+import io.datanapis.xbrl.analysis.data.XbrlInstancePath;
+import io.datanapis.xbrl.analysis.data.XbrlTaxonomyPath;
 import io.datanapis.xbrl.model.*;
+import io.datanapis.xbrl.utils.EdgarUtils;
 import io.datanapis.xbrl.utils.Utils;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -30,13 +33,11 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.Predicate;
+import java.util.function.Function;
+import java.util.regex.Pattern;
 
 public class XbrlTest {
-    private static final String FOLDER_PREFIX;
-    static {
-        FOLDER_PREFIX = System.getProperty("folder.prefix", System.getProperty("user.home") + File.separator + "Downloads");
-    }
-
     @Test
     @Category(io.datanapis.test.SlowTest.class)
     public void testListInsert() {
@@ -54,38 +55,6 @@ public class XbrlTest {
         System.out.println(downloads.toAbsolutePath());
     }
 
-    private enum XbrlTaxonomyPath {
-        T2008(FOLDER_PREFIX + File.separator + "XBRLUSGAAPTaxonomies-2008-03-31/ind/basi/us-gaap-basi-stm-dis-all-2008-03-31.xsd"),
-        T2009(FOLDER_PREFIX + File.separator + "us-gaap-2009/entire/us-gaap-entryPoint-all-2009-01-31.xsd"),
-        T2011(FOLDER_PREFIX + File.separator + "us-gaap-2011/XBRL US Entry Points - LOCAL/xbrl-us-us-gaap-entryPoint-all-2011-01-31.xsd"),
-        T2012(FOLDER_PREFIX + File.separator + "us-gaap-2012-01-31/entire/us-gaap-entryPoint-all-2012-01-31.xsd"),
-        T2013(FOLDER_PREFIX + File.separator + "us-gaap-2013-01-31/entire/us-gaap-entryPoint-all-2013-01-31.xsd"),
-        T2014(FOLDER_PREFIX + File.separator + "us-gaap-2014-01-31/entire/us-gaap-entryPoint-all-2014-01-31.xsd"),
-        T2015(FOLDER_PREFIX + File.separator + "us-gaap-2015-01-31/entire/us-gaap-entryPoint-all-2015-01-31.xsd"),
-        T2016(FOLDER_PREFIX + File.separator + "us-gaap-2016-01-31/entire/us-gaap-entryPoint-all-2016-01-31.xsd"),
-        T2017(FOLDER_PREFIX + File.separator + "us-gaap-2017-01-31/entire/us-gaap-entryPoint-all-2017-01-31.xsd"),
-        T2018(FOLDER_PREFIX + File.separator + "us-gaap-2018-01-31/entire/us-gaap-entryPoint-all-2018-01-31.xsd"),
-        T2019(FOLDER_PREFIX + File.separator + "us-gaap-2019-01-31/entire/us-gaap-entryPoint-all-2019-01-31.xsd"),
-        T2020(FOLDER_PREFIX + File.separator + "us-gaap-2020-01-31/entire/us-gaap-entryPoint-all-2020-01-31.xsd"),
-        T2021(FOLDER_PREFIX + File.separator + "us-gaap-2021-01-31/entire/us-gaap-entryPoint-all-2021-01-31.xsd"),
-        T2022(FOLDER_PREFIX + File.separator + "us-gaap-2022/entire/us-gaap-entryPoint-all-2022.xsd");
-
-        private final String path;
-
-        XbrlTaxonomyPath(String path) {
-            this.path = path;
-        }
-
-        public String getFilePath() {
-            return "/tmp/" + this.name() + ".output";
-        }
-
-        @Override
-        public String toString() {
-            return this.path;
-        }
-    }
-
     private void countDocumentationLabels(Collection<Concept> allConcepts) {
         int count = 0;
         Map<String,Integer> prefixCounts = new TreeMap<>();
@@ -100,20 +69,68 @@ public class XbrlTest {
         System.out.println("Documentation statistics: (" + mapJoiner.join(prefixCounts) + ")");
     }
 
+    private static final String T_PREFIX = "http://fasb.org/us-gaap/role/statement/";
+
+    private static final Set<String> INCOME_STATEMENTS = Set.of(
+                "http://fasb.org/us-gaap/role/statement/StatementOfIncome",
+                "http://fasb.org/us-gaap/role/statement/StatementOfIncomeSecuritiesBasedIncome",
+                "http://fasb.org/us-gaap/role/statement/StatementOfIncomeRealEstateInvestmentTrusts",
+                "http://fasb.org/us-gaap/role/statement/StatementOfIncomeRealEstateExcludingREITs",
+                "http://fasb.org/us-gaap/role/statement/StatementOfIncomeInterestBasedRevenue",
+                "http://fasb.org/us-gaap/role/statement/StatementOfIncomeInsuranceBasedRevenue",
+                "http://fasb.org/us-gaap/role/statement/StatementOfIncomeAlternative"
+            );
+    private static final Set<String> FINANCIAL_POSITION_STATEMENTS = Set.of(
+                "http://fasb.org/us-gaap/role/statement/StatementOfFinancialPositionUnclassified-SecuritiesBasedOperations",
+                "http://fasb.org/us-gaap/role/statement/StatementOfFinancialPositionUnclassified-RealEstateOperations",
+                "http://fasb.org/us-gaap/role/statement/StatementOfFinancialPositionUnclassified-InvestmentBasedOperations",
+                "http://fasb.org/us-gaap/role/statement/StatementOfFinancialPositionUnclassified-DepositBasedOperations",
+                "http://fasb.org/us-gaap/role/statement/StatementOfFinancialPositionClassified",
+                "http://fasb.org/us-gaap/role/statement/StatementOfFinancialPositionClassified-RealEstateOperations"
+            );
+    private static final Set<String> CASH_FLOW_STATEMENTS = Set.of(
+                "http://fasb.org/us-gaap/role/statement/StatementOfCashFlowsIndirect",
+                "http://fasb.org/us-gaap/role/statement/StatementOfCashFlowsIndirectSecuritiesBasedOperations",
+                "http://fasb.org/us-gaap/role/statement/StatementOfCashFlowsIndirectRealEstate",
+                "http://fasb.org/us-gaap/role/statement/StatementOfCashFlowsIndirectInvestmentBasedOperations",
+                "http://fasb.org/us-gaap/role/statement/StatementOfCashFlowsIndirectDepositBasedOperations",
+                "http://fasb.org/us-gaap/role/statement/StatementOfCashFlowsIndirectAdditionalElements"
+            );
+
     @Test
     @Category(io.datanapis.test.SlowTest.class)
     public void testTaxonomy() throws Exception {
-        final XbrlTaxonomyPath xbrlTaxonomyPath = XbrlTaxonomyPath.T2015;
+        testTaxonomy(XbrlTaxonomyPath.T2024);
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void testAllTaxonomy() throws Exception {
+        for (XbrlTaxonomyPath xbrlTaxonomyPath : XbrlTaxonomyPath.values()) {
+            testTaxonomy(xbrlTaxonomyPath, s -> true, true, true, true);
+            Thread.sleep(5000);
+        }
+    }
+
+    private void testTaxonomy(XbrlTaxonomyPath xbrlTaxonomyPath) throws Exception {
+        testTaxonomy(xbrlTaxonomyPath, s -> true, true, true, true);
+    }
+
+    private void testTaxonomy(XbrlTaxonomyPath xbrlTaxonomyPath, Predicate<String> filter, boolean definition, boolean calculation, boolean presentation) throws Exception {
         int definitionLinks = 0, presentationLinks = 0, calculationLinks = 0;
 
         XbrlReader reader = new XbrlReader();
-        DiscoverableTaxonomySet dts = reader.getTaxonomy(xbrlTaxonomyPath.toString());
+        DiscoverableTaxonomySet dts = reader.getTaxonomy(xbrlTaxonomyPath.toString(), true);
         Collection<Concept> allConcepts = dts.getAllConcepts();
         countDocumentationLabels(allConcepts);
 
-        RoleType deprecated = RoleType.DEPRECATED;
+        Collection<Concept> concepts = dts.getMatchingConcepts(Pattern.compile("AdditionsToNoncurrentAssets"));
 
-        PrintWriter writer = new PrintWriter(new FileWriter(xbrlTaxonomyPath.getFilePath()));
+        RoleType deprecated = RoleType.DEPRECATED;
+        System.out.printf("RoleType deprecated has presentation: %b, calculation: %b, definition: %b\n",
+                deprecated.getPresentationLink() != null, deprecated.getCalculationLink() != null, deprecated.getDefinitionLink() != null);
+
+        final PrintWriter writer = new PrintWriter(new FileWriter(xbrlTaxonomyPath.getFilePath()));
         DefinitionTaxonomy definitionTaxonomy = new DefinitionTaxonomy(dts);
         PresentationTaxonomy presentationTaxonomy = new PresentationTaxonomy(dts);
         CalculationTaxonomy calculationTaxonomy = new CalculationTaxonomy(dts);
@@ -124,22 +141,23 @@ public class XbrlTest {
             boolean isDisclosure = roleURI.contains("disclosure");
             boolean isStatement = roleURI.contains("statement");
 
-            if (roleType.getDefinitionLink() != null) {
+            String title = roleType.getDefinition();
+            if (definition && filter.test(title) && roleType.getDefinitionLink() != null) {
                 ++definitionLinks;
-                if (isStatement || roleType.isDeprecated()) {
-                    definitionTaxonomy.displayNetwork(DisplayStyle.TREE, writer, roleType);
+                if (roleType.isDeprecated() || isStatement) {
+                    definitionTaxonomy.walk(roleType, new DefinitionTaxonomy.WriterConsumer(writer));
                 }
             }
-            if (roleType.getPresentationLink() != null) {
+            if (presentation && filter.test(title) && roleType.getPresentationLink() != null) {
                 ++presentationLinks;
-                if (isStatement && !isDisclosure) {
-                    presentationTaxonomy.displayNetwork(writer, roleType);
+                if (roleType.isDeprecated() || (isStatement && !isDisclosure)) {
+                    presentationTaxonomy.walk(roleType, new PresentationTaxonomy.WriterConsumer(writer));
                 }
             }
-            if (roleType.getCalculationLink() != null) {
+            if (calculation && filter.test(title) && roleType.getCalculationLink() != null) {
                 ++calculationLinks;
                 if (isStatement && !isDisclosure) {
-                    calculationTaxonomy.displayNetwork(writer, roleType);
+                    calculationTaxonomy.walk(roleType, new CalculationTaxonomy.WriterConsumer(writer));
                 }
             }
         }
@@ -148,102 +166,208 @@ public class XbrlTest {
 
         dts.logStats();
         System.out.printf("Cache stats: [request: %d, network: %d, hit: %d]\n",
-                XbrlReader.requestCount(), XbrlReader.networkCount(), XbrlReader.hitCount());
+                reader.requestCount(), reader.networkCount(), reader.hitCount());
         System.out.printf("  Definition links: [%d]\n", definitionLinks);
         System.out.printf("Presentation Links: [%d]\n", presentationLinks);
         System.out.printf(" Calculation Links: [%d]\n", calculationLinks);
     }
 
-    private enum XbrlInstancePath {
-        VIAC_2013Q1_LOCAL(FOLDER_PREFIX + File.separator + "0001193125-13-031360-xbrl.zip"),
-        HON_20141231("https://www.sec.gov/Archives/edgar/data/773840/000093041315000621/hon-20141231.xml"),
-        HON_20141231_ZIP("https://www.sec.gov/Archives/edgar/data/773840/000093041315000621/0000930413-15-000621-xbrl.zip"),
-        AAPL_20120926_ZIP("https://www.sec.gov/Archives/edgar/data/320193/000119312512444068/0001193125-12-444068-xbrl.zip"),
-        AAPL_20200926_ZIP("https://www.sec.gov/Archives/edgar/data/320193/000032019320000096/0000320193-20-000096-xbrl.zip"),
-        AAPL_20200926_LOCAL(FOLDER_PREFIX + File.separator + "0000320193-20-000096-xbrl.zip"),
-        AAPL_20200926_ZIP_LOCAL("https://www.sec.gov/Archives/edgar/data/320193/000032019320000096/0000320193-20-000096-xbrl.zip",
-                FOLDER_PREFIX + File.separator + "0000320193-20-000096-xbrl.zip"),
-        JPM_20210930_ZIP("https://www.sec.gov/Archives/edgar/data/19617/000001961721000458/0000019617-21-000458-xbrl.zip"),
-        JPM_20210930_ZIP_LOCAL("https://www.sec.gov/Archives/edgar/data/19617/000001961721000458/0000019617-21-000458-xbrl.zip",
-                FOLDER_PREFIX + File.separator + "0000019617-21-000458-xbrl.zip"),
-        NVR_20210930_ZIP("https://www.sec.gov/Archives/edgar/data/906163/000090616321000099/0000906163-21-000099-xbrl.zip"),
-        GNE_2020("https://www.sec.gov/Archives/edgar/data/1528356/000121390020011615/gne-20200331.xml"),
-        EXC_2017("https://www.sec.gov/Archives/edgar/data/8192/000162828018001324/exc-20171231.xml"),
-        DTEA_2020("https://www.sec.gov/Archives/edgar/data/1627606/000147793220005516/dtea-20200801.xml"),
-        IMAX_2017("https://www.sec.gov/Archives/edgar/data/921582/000119312518061184/imax-20171231.xml"),
-        RRC_2021("https://www.sec.gov/Archives/edgar/data/315852/000156459021020565/rrc-10q_20210331.htm"),
-        TEST_1(FOLDER_PREFIX + File.separator + "0001493152-21-019994-xbrl.zip"),   /* NullPointerException */
-        TEST_2(FOLDER_PREFIX + File.separator + "0001493152-21-028505-xbrl.zip"),   /* NullPointerException */
-        TEST_3(FOLDER_PREFIX + File.separator + "0001674356-21-000008-xbrl.zip"),   /* NullPointerException */
-        TEST_4(FOLDER_PREFIX + File.separator + "0001052918-21-000303-xbrl.zip"),   /* Unhandled Ix element [hidden] */
-        TEST_5(FOLDER_PREFIX + File.separator + "0001437749-21-020604-xbrl.zip"),   /* Unhandled Ix element [exclude] */
-        TEST_6(FOLDER_PREFIX + File.separator + "0000205402-21-000006-xbrl.zip"),   /* DateTimeParseException: Text 'December 31' */
-        TEST_7(FOLDER_PREFIX + File.separator + "0001213900-21-044324-xbrl.zip"),   /* NullPointerException */
-        TEST_8(FOLDER_PREFIX + File.separator + "0001213900-21-058667-xbrl.zip"),   /* DateTimeParseException: Text 'September 30," */
-        TEST_9(FOLDER_PREFIX + File.separator + "0001493152-21-024869-xbrl.zip"),   /* DateTimeParseException: Text 'September" */
-        TEST_10(FOLDER_PREFIX + File.separator + "0000950170-21-004266-xbrl.zip"),  /* NumberFormatException: For input string: """" */
-        TEST_11(FOLDER_PREFIX + File.separator + "0001437749-21-009071-xbrl.zip"),  /* Poor coverage */
-        TEST_12(FOLDER_PREFIX + File.separator + "0001091818-21-000022-xbrl.zip"),  /* Almost full coverage */
-        TEST_13(FOLDER_PREFIX + File.separator + "0000924168-21-000046-xbrl.zip"),  /* NullPointerException - nested ixNonFraction */
-        TEST_14(FOLDER_PREFIX + File.separator + "0001390777-21-000037-xbrl.zip"),  /* NullPointerException - multiple HTML files */
-        TEST_15(FOLDER_PREFIX + File.separator + "0000277509-21-000041-xbrl.zip"),  /* NullPointerException */
-        TEST_16(FOLDER_PREFIX + File.separator + "0001590584-21-000037-xbrl.zip"),  /* NullPointerException */
-        TEST_17(FOLDER_PREFIX + File.separator + "0001721868-21-000833-xbrl.zip"),  /* Invalid Date */
-        TEST_18(FOLDER_PREFIX + File.separator + "0000950170-21-004376-xbrl.zip"),  /* Invalid Date */
-        TEST_19(FOLDER_PREFIX + File.separator + "0001193125-21-313689-xbrl.zip"),  /* NullPointerException - unordered continuations */
-        TEST_20(FOLDER_PREFIX + File.separator + "0001564590-21-013168-xbrl.zip"),  /* NullPointerException */
-        TEST_21(FOLDER_PREFIX + File.separator + "0001213900-21-050183-xbrl.zip"),  /* NullPointerException */
-        TEST_22(FOLDER_PREFIX + File.separator + "0001654954-20-005662-xbrl.zip"),  /* No root file */
-//        TEST_23(FOLDER_PREFIX + File.separator + "0001564590-20-013188-xbrl.zip"),  /* Invalid zip file */
-        SAV_ZIP("https://www.sec.gov/Archives/edgar/data/1647822/000168316820003565/0001683168-20-003565-xbrl.zip");
-//        TEST_30(FOLDER_PREFIX + File.separator + "0001213900-21-016080-xbrl.zip");  /* Zero root elements - will fail */
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void getDeprecatedConcepts() throws Exception {
+        Map<String,Set<String>> map = new HashMap<>();
+        Map<String,Set<String>> axisMap = new HashMap<>();
+        Map<String,Set<String>> memberMap = new HashMap<>();
+        getDeprecatedConcepts(XbrlTaxonomyPath.T2023, map, axisMap, memberMap);
+        System.out.printf("Deprecated concept data: concepts:[%d], axis:[%d], member:[%d]\n", map.size(), axisMap.size(), memberMap.size());
+        int count = 0;
+        for (var entry : map.entrySet()) {
+            System.out.printf("\t[%s] -> %s\n", entry.getKey(), entry.getValue().toString());
+            if (++count > 100)
+                break;
+        }
+    }
 
-        private final String path;
-        private final String localPath;
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void getAllDeprecatedConcepts() throws Exception {
+        Map<String,Set<String>> map = new TreeMap<>();
+        Map<String,Set<String>> axisMap = new TreeMap<>();
+        Map<String,Set<String>> memberMap = new TreeMap<>();
+        List<XbrlTaxonomyPath> list = new ArrayList<>(List.of(XbrlTaxonomyPath.values()));
+        list.sort((l, r) -> Integer.compare(r.year(), l.year()));
 
-        public String getPath() {
-            return this.path;
+        for (XbrlTaxonomyPath xbrlTaxonomyPath : list) {
+            getDeprecatedConcepts(xbrlTaxonomyPath, map, axisMap, memberMap);
+            Thread.sleep(5000);
+        }
+        System.out.printf("Deprecated concept data: concepts:[%d], axis:[%d], member:[%d]\n", map.size(), axisMap.size(), memberMap.size());
+        for (var entry : map.entrySet()) {
+            System.out.printf("    [%s] -> [%s]\n", entry.getKey(), entry.getValue());
+        }
+    }
+
+    private void getDeprecatedConcepts(XbrlTaxonomyPath xbrlTaxonomyPath, Map<String,Set<String>> map, Map<String,Set<String>> axisMap, Map<String,Set<String>> memberMap) throws Exception {
+        XbrlReader reader = new XbrlReader();
+        DiscoverableTaxonomySet dts = reader.getTaxonomy(xbrlTaxonomyPath.toString(), true);
+
+        DefinitionTaxonomy definitionTaxonomy = new DefinitionTaxonomy(dts);
+        Collection<RoleType> allRoles = dts.getAllRoleTypes();
+        for (RoleType roleType : allRoles) {
+            if (roleType.getDefinitionLink() == null)
+                continue;
+
+            if (!roleType.isDeprecated())
+                continue;
+
+            definitionTaxonomy.walk(roleType, new DefinitionNetworkConsumer() {
+                @Override
+                public void nodeStart(DefinitionGraphNode node, Deque<DefinitionGraphNode> path) {
+                    String nodeName = node.getQualifiedName();
+
+                    if (path.size() > 1) {
+                        System.out.printf("[%s] has path length of [%d]\n", nodeName, path.size());
+                    }
+                    String replacement = path.getLast().getQualifiedName();
+
+                    Set<String> replacements;
+                    if (nodeName.endsWith("Axis") || replacement.endsWith("Axis")) {
+                        replacements = axisMap.computeIfAbsent(nodeName, k -> new HashSet<>());
+                    } else if (nodeName.endsWith("Member") || replacement.endsWith("Member")) {
+                        replacements = memberMap.computeIfAbsent(nodeName, k -> new HashSet<>());
+                    } else {
+                        replacements = map.computeIfAbsent(nodeName, k -> new HashSet<>());
+                        Set<String> s = map.get(replacement);
+                        if (Objects.nonNull(s) && s.size() == 1) {
+                            System.out.printf("Replacement [%s] for [%s] has been replaced by [%s]\n", replacement, nodeName, s.iterator().next());
+                        } else if (Objects.nonNull(s) && s.size() > 1) {
+                            System.out.printf("Replacement [%s] for [%s] has been replaced by [%d] concepts\n", replacement, nodeName, s.size());
+                        }
+                    }
+                    replacements.add(replacement);
+                }
+            });
         }
 
-        public String getLocalPath() {
-            return this.localPath;
-        }
+        Collection<Concept> concepts = dts.getAllConcepts();
+        for (Concept concept : concepts) {
+            List<String> replacements = concept.getReplacements();
+            if (Objects.isNull(replacements))
+                continue;
 
-        public String getFilePath() {
-            return "/tmp/" + this.name() + ".output";
+            System.out.printf("Replacements for [%s]:", concept.getQualifiedName());
+            Collection<Concept> replacementConcepts = dts.asConcepts(replacements);
+            for (Concept c :  replacementConcepts) {
+                System.out.printf(" [%s]", c.getQualifiedName());
+            }
+            System.out.println();
         }
+    }
 
-        public String getJsonPath() {
-            return "/tmp/" + this.name() + ".json";
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void writeTaxonomy() throws Exception {
+        writeTaxonomy(XbrlTaxonomyPath.T2020, s -> true);
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void writeAllTaxonomy() throws Exception {
+        Set<String> candidates = new HashSet<>(INCOME_STATEMENTS);
+        candidates.addAll(FINANCIAL_POSITION_STATEMENTS);
+        candidates.addAll(CASH_FLOW_STATEMENTS);
+
+        for (XbrlTaxonomyPath taxonomyPath : XbrlTaxonomyPath.values()) {
+            writeTaxonomy(taxonomyPath, candidates::contains);
+            Thread.sleep(5000);
         }
+    }
 
-        XbrlInstancePath(String path) {
-            this(path, null);
-        }
+    private void writeTaxonomy(XbrlTaxonomyPath xbrlTaxonomyPath, Predicate<String> filter) throws Exception {
+        XbrlReader reader = new XbrlReader();
+        DiscoverableTaxonomySet dts = reader.getTaxonomy(xbrlTaxonomyPath.toString(), true);
 
-        XbrlInstancePath(String path, String localPath) {
-            this.path = path;
-            this.localPath = localPath;
+        try (PrintWriter writer = new PrintWriter(new FileWriter(xbrlTaxonomyPath.getCSVPath()))) {
+            PresentationTaxonomy presentationTaxonomy = new PresentationTaxonomy(dts);
+            Collection<RoleType> allRoles = dts.getAllRoleTypes();
+            for (RoleType roleType : allRoles) {
+                String roleURI = roleType.getRoleURI().toLowerCase();
+                boolean isDisclosure = roleURI.contains("disclosure");
+                boolean isStatement = roleURI.contains("statement");
+
+                String title = roleType.getDefinition();
+                int index = title.lastIndexOf("/");
+                String label;
+                if (index >= 0) {
+                    label = title.substring(index + 1);
+                } else {
+                    label = title;
+                }
+
+                if (roleType.getPresentationLink() != null && filter.test(title)) {
+                    if (isStatement && !isDisclosure) {
+                        Function<Deque<PresentationGraphNode>,String> mapper = p -> {
+                            final StringBuilder builder = new StringBuilder();
+                            Iterator<PresentationGraphNode> iterator = p.descendingIterator();
+                            boolean print = false;
+                            while (iterator.hasNext()) {
+                                PresentationGraphNode graphNode = iterator.next();
+                                Concept concept = graphNode.getConcept();
+                                if (concept.getQualifiedName().equals("us-gaap:StatementLineItems")) {
+                                    print = true;
+                                    continue;
+                                }
+                                if (!print)
+                                    continue;
+                                if (!builder.isEmpty())
+                                    builder.append('|');
+                                builder.append(graphNode.getConcept().getQualifiedName());
+                            }
+                            return builder.toString();
+                        };
+
+                        presentationTaxonomy.walk(roleType, new PresentationNetworkConsumer() {
+                            @Override
+                            public void nodeEnd(PresentationGraphNode n, Deque<PresentationGraphNode> p) {
+                                if (n.hasChildren())
+                                    return;
+
+                                String path = mapper.apply(p);
+                                if (!path.isEmpty()) {
+                                    writer.printf("%s,%s,%s\n", n.getConcept().getQualifiedName(), label, path);
+                                }
+                            }
+                        });
+                    }
+                }
+            }
         }
     }
 
     @Test
     @Category(io.datanapis.test.SlowTest.class)
     public void testSingle() throws Exception {
-        testSingle(XbrlInstancePath.JPM_20210930_ZIP, false);
+        testSingle(XbrlInstancePath.T2023_GOPRO_INC_10Q, false, false, false);
     }
 
     @Test
     @Category(io.datanapis.test.SlowTest.class)
     public void testAll() throws Exception {
+        XbrlInstancePath from = XbrlInstancePath.T2012_GLOBAL_POWER_EQUIPMENT_GROUP_INC_10Q;
+        boolean skip = false;
         for (XbrlInstancePath instancePath : XbrlInstancePath.values()) {
-            testSingle(instancePath, true);
+            if (instancePath.equals(from)) {
+                skip = false;
+            }
+            if (skip)
+                continue;
+            testSingle(instancePath, false, false, false);
             Thread.sleep(1000);
         }
         System.out.println("Testing completed!");
     }
 
-    private void testSingle(XbrlInstancePath instancePath, boolean asJson) throws Exception {
+    private void testSingle(XbrlInstancePath instancePath, boolean asJson, boolean outputContexts, boolean succinct) throws Exception {
         System.out.println("Testing [" + instancePath.name() + "]");
         XbrlReader reader = new XbrlReader();
         XbrlInstance instance;
@@ -272,18 +396,37 @@ public class XbrlTest {
 
         String path = asJson ? instancePath.getJsonPath() : instancePath.getFilePath();
         PrintWriter writer = new PrintWriter(new FileWriter(path));
-        PrettyPrinter printer = new PrettyPrinter(writer, true, true, false);
+
+        if (outputContexts) {
+            writer.println("Contexts:");
+            Collection<Context> contexts = instance.getAllContexts();
+            for (Context context : contexts) {
+                writer.println(context.toString());
+            }
+            writer.println();
+        }
+
+        PrettyPrinter printer = new PrettyPrinter(writer, true, false, false);
         PresentationSerializer presentationSerializer = new PresentationSerializer(true);
         PresentationNetwork fileWriter = new PresentationNetwork(instance, asJson ? presentationSerializer : printer);
 
         for (RoleType roleType : roles) {
-            if (asJson) {
-                calculationNetwork.validateCalculation(null, roleType);
+            if (!succinct) {
+                if (asJson) {
+                    calculationNetwork.validateCalculation(null, roleType);
+                } else {
+                    calculationNetwork.validateCalculation(writer, roleType);
+                    writer.println();
+                    definitionNetwork.walk(roleType, new DefinitionTaxonomy.WriterConsumer(writer));
+//                    fileWriter.walk(roleType, new PresentationTaxonomy.WriterConsumer(writer));
+                }
+                fileWriter.process(roleType);
             } else {
-                calculationNetwork.validateCalculation(writer, roleType);
-                definitionNetwork.displayNetwork(writer, roleType);
+                String[] groups = EdgarUtils.splitDefinition(roleType);
+                if (Objects.nonNull(groups) && groups[1].equalsIgnoreCase("statement")) {
+                    fileWriter.process(roleType);
+                }
             }
-            fileWriter.process(roleType);
         }
 
         fileWriter.complete();
@@ -292,7 +435,7 @@ public class XbrlTest {
 
         if (asJson) {
             JsonSerializer jsonSerializer = new JsonSerializer()
-                    .prettyPrint(true)
+                    .prettyPrint(false)
                     .serializeNulls(false)
                     .dei(instance.getDei())
                     .statistics(statistics)
@@ -306,6 +449,15 @@ public class XbrlTest {
         }
 
         instance.displayStats(fileWriter.getFactsUsed());
+
+        Dei dei = instance.getDei();
+        String prefix = instance.getInstancePrefix();
+        if (Objects.nonNull(prefix))
+            prefix = prefix.toUpperCase();
+        System.out.printf("Prefix: [%s], Fiscal Period, guessed vs provided: [%d, %s] / [%d, %s], Tickers: [%s]\n",
+                prefix, Dei.guessFiscalYear(dei, dei.getEstimatedPeriodEndDate()),
+                Dei.guessFiscalPeriod(dei, dei.getEstimatedPeriodEndDate()), dei.getFiscalYear(), dei.getFiscalPeriod(),
+                Joiner.on(", ").join(dei.getTickers()));
         instance.clear();
 
         Runtime.getRuntime().gc();
@@ -491,11 +643,25 @@ public class XbrlTest {
             "https://www.sec.gov/Archives/edgar/data/100790/000002991518000005/ucc-20171231.xml",
     };
 
+    private static String fileName(String url) {
+        int startIndex = url.lastIndexOf("/");
+        if (startIndex > 0) {
+            int endIndex = url.lastIndexOf('.');
+            if (endIndex > 0) {
+                return url.substring(startIndex + 1, endIndex) + ".output";
+            } else {
+                return url.substring(startIndex + 1) + ".output";
+            }
+        }
+
+        return null;
+    }
+
     @Test
     @Category(io.datanapis.test.SlowTest.class)
     public void testURLs() throws Exception {
         XbrlReader reader = new XbrlReader();
-        for (String url : NOT_WORKING_URLS) {
+        for (String url : URLS) {
             try {
                 System.out.println(url);
                 XbrlInstance instance = reader.getInstance(null, url);
@@ -503,8 +669,14 @@ public class XbrlTest {
                 DiscoverableTaxonomySet dts = instance.getTaxonomy();
                 Collection<RoleType> roles = dts.getReportableRoleTypes();
 
-                PrintWriter writer = new PrintWriter(Writer.nullWriter());
-//                PrintWriter writer = new PrintWriter("/tmp/instance.txt");
+                String fileName = fileName(url);
+
+                PrintWriter writer;
+                if (fileName != null) {
+                    writer = new PrintWriter(Path.of("/tmp", fileName).toFile());
+                } else {
+                    writer = new PrintWriter(PrintWriter.nullWriter());
+                }
 
                 DefinitionNetwork definitionNetwork = new DefinitionNetwork(instance);
                 CalculationNetwork calculationNetwork = new CalculationNetwork(instance, new CalculationProcessor() {
@@ -520,7 +692,7 @@ public class XbrlTest {
                 for (RoleType roleType : roles) {
                     writer.printf("{%s}\n", roleType.getDefinition());
                     calculationNetwork.validateCalculation(writer, roleType);
-                    definitionNetwork.displayNetwork(writer, roleType);
+                    definitionNetwork.walk(roleType, new DefinitionTaxonomy.WriterConsumer(writer));
                     fileWriter.process(roleType);
                 }
 
@@ -529,6 +701,7 @@ public class XbrlTest {
                 XbrlInstance.Statistics statistics = instance.getStatistics();
                 XbrlInstance.UnusedStatistics unusedStatistics = instance.getUnusedStatistics(fileWriter.getFactsUsed());
                 printInfo(instance, fileWriter, statistics, unusedStatistics);
+                Thread.sleep(1000);
             } catch (AssertionError e) {
                 e.printStackTrace();
                 reader = new XbrlReader();

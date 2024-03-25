@@ -22,7 +22,10 @@ import io.datanapis.xbrl.model.Fact;
 import lombok.Getter;
 import org.dom4j.Namespace;
 
+import java.time.LocalDate;
+import java.time.MonthDay;
 import java.util.Map;
+import java.util.Objects;
 
 public class JsonSerializer {
     private static final String NUMBER_OF_CONTEXTS = "numberOfContexts";
@@ -183,20 +186,26 @@ public class JsonSerializer {
             } else {
                 object.addProperty(DATE_FILED, (String)null);
             }
-            object.addProperty(FISCAL_YEAR, di.getFiscalYear());
-            object.addProperty(FISCAL_PERIOD, di.getFiscalPeriod());
+            LocalDate periodEndDate = dei.getEstimatedPeriodEndDate();
+            object.addProperty(FISCAL_YEAR, Dei.guessFiscalYear(dei, periodEndDate));
+            object.addProperty(FISCAL_PERIOD, Dei.guessFiscalPeriod(dei, periodEndDate));
             object.addProperty(DOCUMENT_TYPE, di.getDocumentType());
-            object.addProperty(PERIOD_END_DATE, di.getPeriodEndDate().toString());
+            if (dei.getPeriodEndDate() != null) {
+                object.addProperty(PERIOD_END_DATE, di.getPeriodEndDate().toString());
+            } else {
+                object.addProperty(PERIOD_END_DATE, (String)null);
+            }
             object.addProperty(AMENDMENT_FLAG, dei.isAmendmentFlag());
-            object.addProperty(YEAR_END_DATE, dei.getYearEndDate());
+            MonthDay yearEndDate = dei.getYearEndDate();
+            object.addProperty(YEAR_END_DATE, Objects.nonNull(yearEndDate) ? yearEndDate.toString() : null);
         }
         return object;
     }
 
+    @Getter
     public static final class ValidationDetails {
-        private final @Getter
-        String definition;
-        private final @Getter String calculationDetails;
+        private final String definition;
+        private final String calculationDetails;
 
         public ValidationDetails(String definition, String calculationDetails) {
             this.definition = definition;

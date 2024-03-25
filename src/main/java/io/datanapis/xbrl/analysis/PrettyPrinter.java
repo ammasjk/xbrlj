@@ -22,7 +22,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Collection;
 import java.util.List;
-import java.util.ListIterator;
+import java.util.Objects;
 
 public final class PrettyPrinter implements PresentationProcessor {
     private static final int TAB_WIDTH = 4;
@@ -32,9 +32,11 @@ public final class PrettyPrinter implements PresentationProcessor {
     private final boolean verbose;
     private final boolean useLabels;
     private final boolean skipTables;
+    private final boolean htmlTables;
     private final int width;
     private final int tabWidth;
     private final PrintWriter writer;
+    private List<ExplicitMember> previous;
 
     enum Type {
         NAME,
@@ -47,22 +49,24 @@ public final class PrettyPrinter implements PresentationProcessor {
     }
 
     public PrettyPrinter(PrintWriter writer, boolean printDefinition, boolean useLabels, boolean verbose) {
-        this(writer, printDefinition, verbose, useLabels, false, WIDTH, TAB_WIDTH);
+        this(writer, printDefinition, verbose, useLabels, false, true, WIDTH, TAB_WIDTH);
     }
 
-    public PrettyPrinter(PrintWriter writer, boolean printDefinition, boolean useLabels, boolean skipTables, boolean verbose) {
-        this(writer, printDefinition, verbose, useLabels, skipTables, WIDTH, TAB_WIDTH);
+    public PrettyPrinter(PrintWriter writer, boolean printDefinition, boolean useLabels, boolean skipTables, boolean htmlTables, boolean verbose) {
+        this(writer, printDefinition, verbose, useLabels, skipTables, htmlTables, WIDTH, TAB_WIDTH);
     }
 
     public PrettyPrinter(PrintWriter writer, boolean printDefinition, boolean verbose,
-                         boolean useLabels, boolean skipTables, int width, int tabWidth) {
+                         boolean useLabels, boolean skipTables, boolean htmlTables, int width, int tabWidth) {
         this.writer = writer;
         this.printDefinition = printDefinition;
         this.verbose = verbose;
         this.useLabels = useLabels;
         this.skipTables = skipTables;
+        this.htmlTables = htmlTables;
         this.width = width;
         this.tabWidth = tabWidth;
+        this.previous = null;
     }
 
     public void complete() {
@@ -111,17 +115,17 @@ public final class PrettyPrinter implements PresentationProcessor {
         }
     }
 
-    private Pair<String,String> getMemberLabel(ExplicitMember member, PresentationInfoProvider infoProvider) {
+    private LabelPair getMemberLabel(PresentationGraphNode lineItem, ExplicitMember member, PresentationInfoProvider infoProvider) {
         if (useLabels) {
-            return infoProvider.getLabel(member);
+            return infoProvider.getLabel(lineItem, member);
         }
 
-        return new Pair<>(member.getDimension().getQualifiedName(), member.getMember().getQualifiedName());
+        return new LabelPair(member.getDimension().getQualifiedName(), member.getMember().getQualifiedName());
     }
 
-    private String getAxisLabel(Concept axis, PresentationInfoProvider infoProvider) {
+    private String getAxisLabel(PresentationGraphNode lineItem, Concept axis, PresentationInfoProvider infoProvider) {
         if (useLabels) {
-            return infoProvider.getAxisLabel(axis);
+            return infoProvider.getAxisLabel(lineItem, axis);
         }
 
         return axis.getQualifiedName();
@@ -170,6 +174,12 @@ public final class PrettyPrinter implements PresentationProcessor {
     @Override
     public void internalNodeStart(PresentationGraphNode node, int level) {
         writer.printf(pNameFormat(level), getLabel(node));
+        previous = null;
+    }
+
+    @Override
+    public void internalNodeEnd(PresentationGraphNode node, int level) {
+        previous = null;
     }
 
     private static String getLabelType(PresentationGraphNode node) {
@@ -182,13 +192,13 @@ public final class PrettyPrinter implements PresentationProcessor {
         }
 
         if (labelType.contains(Label.TOTAL)) {
-            if (builder.length() > 0) {
+            if (!builder.isEmpty()) {
                 builder.append(' ');
             }
             builder.append("tot");
         }
 
-        if (builder.length() > 0) {
+        if (!builder.isEmpty()) {
             return "[" + builder + "]";
         } else {
             return "";
@@ -204,15 +214,22 @@ public final class PrettyPrinter implements PresentationProcessor {
             String html = Fact.getValue(fact);
             TextBlockProcessor textProcessor = new TextBlockProcessor(html);
             if (skipTables) {
-                writer.printf(pTextFormat(level), getLabel(node), textProcessor.getParagraphs());
+                writer.printf(pTextFormat(level), getLabel(node), textProcessor.getHtml());
             } else {
-                writer.printf(pTextFormat(level), getLabel(node),
-                        textProcessor.getParagraphs() + "\n" + textProcessor.getTables());
+                if (!htmlTables) {
+                    writer.printf(pTextFormat(level), getLabel(node),
+                            textProcessor.getHtml() + "\n" + textProcessor.getTables());
+                } else {
+                    textProcessor.getTables(tableHtml -> {
+                        writer.printf(pTextFormat(level), "", tableHtml);
+                    });
+                }
             }
         } else {
             writer.printf(pValueFormat(level), getLabel(node), Fact.getValue(fact, node.isNegated()),
                     concept.getBalance(), getLabelType(node), Fact.getUnit(fact));
         }
+        previous = null;
     }
 
     @Override
@@ -220,34 +237,47 @@ public final class PrettyPrinter implements PresentationProcessor {
         Concept concept = node.getConcept();
         StringBuilder builder = new StringBuilder();
 
-        // This logic ignores preferredLabels for the members and axis. DimensionedFact needs to be updated to
-        // include this information.
+        int levelIncrement = 1;
         if (fact.getDimensions() != null) {
             List<ExplicitMember> dimensions = fact.getDimensions();
-            /* Start from the end */
-            ListIterator<ExplicitMember> listIterator = dimensions.listIterator(dimensions.size());
-            while (listIterator.hasPrevious()) {
-                ExplicitMember member = listIterator.previous();
-                Pair<String,String> labels = getMemberLabel(member, infoProvider);
-                if (builder.length() == 0) {
-                    builder.append(labels.getSecond());
-                    builder.append(" (");
-                    builder.append(labels.getFirst());
-                } else {
-                    builder.append(", ");
-                    builder.append(getAxisLabel(member.getDimension(), infoProvider));
+            int i = 0, j = 0;
+            if (Objects.nonNull(previous)) {
+                while (i < previous.size() && j < dimensions.size()) {
+                    if (previous.get(i).equals(dimensions.get(j))) {
+                        ++i;
+                        ++j;
+                    } else {
+                        break;
+                    }
                 }
             }
-            builder.append(')');
+
+            while (j < dimensions.size() - 1) {
+                levelIncrement = infoProvider.level(node, dimensions.subList(0, j+1));
+                ExplicitMember member = dimensions.get(j);
+                LabelPair labels = getMemberLabel(node, member, infoProvider);
+                builder.append(labels.getSecond());
+                writer.printf(pNameFormat(level + levelIncrement), builder);
+                builder.setLength(0);
+                ++j;
+            }
+
+            levelIncrement = infoProvider.level(node, dimensions);
+            ExplicitMember member = dimensions.get(dimensions.size() - 1);
+            LabelPair labels = getMemberLabel(node, member, infoProvider);
+            builder.append(labels.getSecond());
+
+            previous = List.copyOf(dimensions);
         } else if (fact.getTypedMembers() != null) {
+            previous = null;
             for (TypedMember member : fact.getTypedMembers()) {
-                if (builder.length() > 0) {
+                if (!builder.isEmpty()) {
                     builder.append(", ");
                 }
                 builder.append(member.getMember());
             }
         }
-        writer.printf(pValueFormat(level), builder, Fact.getValue(fact.getFact()),
+        writer.printf(pValueFormat(level + levelIncrement), builder, Fact.getValue(fact.getFact(), node.isNegated()),
                 concept.getBalance(), getLabelType(node), Fact.getUnit(fact.getFact()));
     }
 

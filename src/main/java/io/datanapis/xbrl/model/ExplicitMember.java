@@ -38,7 +38,7 @@ public final class ExplicitMember implements Comparable<ExplicitMember> {
 
     @Override
     public String toString() {
-        return "(" + member.getQualifiedName() + ", " + dimension.getQualifiedName() + ')';
+        return "(" + dimension.getQualifiedName() + ", " + member.getQualifiedName() + ')';
     }
 
     @Override

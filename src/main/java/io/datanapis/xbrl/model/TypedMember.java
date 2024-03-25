@@ -15,7 +15,9 @@
  */
 package io.datanapis.xbrl.model;
 
-public final class TypedMember {
+import org.jetbrains.annotations.NotNull;
+
+public final class TypedMember implements Comparable<TypedMember> {
     private final Concept dimension;
     private final String member;
 
@@ -53,5 +55,13 @@ public final class TypedMember {
         int result = dimension.hashCode();
         result = 31 * result + member.hashCode();
         return result;
+    }
+
+    @Override
+    public int compareTo(@NotNull TypedMember o) {
+        int result = dimension.getQualifiedName().compareTo(o.getDimension().getQualifiedName());
+        if (result != 0)
+            return result;
+        return member.compareTo(o.getMember());
     }
 }

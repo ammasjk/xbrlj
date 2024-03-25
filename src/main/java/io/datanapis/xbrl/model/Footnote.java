@@ -16,6 +16,7 @@
 package io.datanapis.xbrl.model;
 
 import io.datanapis.xbrl.TagNames;
+import io.datanapis.xbrl.utils.JsonUtils;
 import io.datanapis.xbrl.utils.XmlUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.dom4j.Attribute;
@@ -103,11 +104,13 @@ public final class Footnote {
         Element element = elements.get(0);
         footnote.id = element.attributeValue(TagNames.ID_TAG);
         footnote.role = element.attributeValue(TagNames.FOOTNOTE_ROLE_TAG);
+        boolean escape = Boolean.parseBoolean(element.attributeValue(TagNames.ESCAPE_TAG));
 
-        /* TODO This needs to be controlled by the escape flag */
         String value = XmlUtils.asXML(elements);
-        value = StringEscapeUtils.unescapeHtml4(value);
-        footnote.value = Jsoup.clean(value, Safelist.relaxed());
+        if (escape) {
+            value = StringEscapeUtils.unescapeHtml4(value);
+        }
+        footnote.value = Jsoup.clean(value, JsonUtils.relaxed());
 
         return footnote;
     }

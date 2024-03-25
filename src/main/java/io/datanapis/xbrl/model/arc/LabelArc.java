@@ -68,7 +68,13 @@ public final class LabelArc extends FromArc {
         String to = element.attributeValue(TagNames.TO_TAG);
         arc.to = link.getLabel(to);
         if (arc.to == null) {
-            log.info("(To) Label not found [{}]", to);
+            /*
+             * Starting 2022 Closed-End funds are required to file XBRL. However, dei::EntityFileNumber is not valid for CEFs.
+             * The schema cef-2022.xsd prohibits this arc in the DEI label link base. However, it references labels
+             * in the DEI schema which isn't defined in the current LabelLink.
+             * TODO May need to address this in the future
+             */
+            log.info("(To) Label not found [{}]. Source URL: [{}]", to, sourceUrl);
         }
 
         for (Attribute attribute : element.attributes()) {

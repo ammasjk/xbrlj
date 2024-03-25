@@ -44,11 +44,18 @@ public class IxtTransform {
                     .put(1, 31).put(2, 29).put(3, 31).put(4, 30).put(5, 31).put(6, 30).put(7, 31).put(8, 31).put(9, 30)
                     .put(10, 31).put(11, 30).put(12, 31).build();
 
+    private static final Pattern DECIMAL_PATTERN = Pattern.compile("^[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)$");
+
+    private static final Pattern NUM_CANONICALIZATION = Pattern.compile("^[ \\t\\n\\r]*0*([1-9][0-9]*)?(([.]0*)[ \\t\\n\\r]*$|([.][0-9]*[1-9])0*[ \\t\\n\\r]*$|[ \\t\\n\\r]*$)");
+
     private static final Pattern ZERO_DASH =
             Pattern.compile("^[ \\t\\n\\r]*([-]|\u002D|\u058A|\u05BE|\u2010|\u2011|\u2012|\u2013|\u2014|\u2015|\uFE58|\uFE63|\uFF0D)[ \\t\\n\\r]*$");
 
     private static final Pattern NUM_DOT_DECIMAL =
             Pattern.compile("^[ \\t\\n\\r]*[0-9]{1,3}([, \u00A0]?[0-9]{3})*(\\.[0-9]+)?[ \\t\\n\\r]*$");
+
+    private static final Pattern NUM_DOT_DECIMAL_TR4 = Pattern.compile("^[ \\t\\n\\r]*[, \u00A00-9]*(\\.[ \u00A00-9]+)?[ \\t\\n\\r]*$");
+    private static final Pattern NUM_DOT_DECIMAL_APOS = Pattern.compile("^[ \\t\\n\\r]*[,'`´’′ \u00a00-9]*(\\.[ \u00a00-9]+)?[ \\t\\n\\r]*$");
 
     private static final Pattern NUM_DOT_DECIMAL_IN =
             Pattern.compile("^(([0-9]{1,2}[, \u00A0])?([0-9]{2}[, \u00A0])*[0-9]{3})([.][0-9]+)?$|^([0-9]+)([.][0-9]+)?$");
@@ -114,6 +121,7 @@ public class IxtTransform {
                 return new IxtDate.Builder()
                         .dayGroup(1).monthGroup(2).yearGroup(3).pattern(DAY_MONTH_YEAR).build().parse(value).toString();
 
+            case "date-day-monthname-year-en":
             case "datedaymonthyearen":
                 return new IxtDate.Builder()
                         .dayGroup(1).monthGroup(2).yearGroup(3).pattern(DAY_MONTH_YEAR_EN).build().parse(value).toString();
@@ -157,6 +165,11 @@ public class IxtTransform {
             switch (value.charAt(i)) {
                 case ',':
                 case ' ':
+                case '\'':
+                case '`':
+                case '´':
+                case '’':
+                case '′':
                 case '\u00A0':
                     i++;
                     continue;
@@ -167,6 +180,41 @@ public class IxtTransform {
             }
         }
         return new String(cleaned, 0, j);
+    }
+
+    private static String canonicalNumber(String value) {
+        Matcher matcher = NUM_CANONICALIZATION.matcher(value);
+        if (!matcher.matches())
+            return value;
+
+        int nOfGroups = matcher.groupCount();
+        String groupOne = null, groupFour = null;
+
+        if (nOfGroups >= 1) {
+            groupOne = matcher.group(1);
+        }
+        if (nOfGroups >= 4) {
+            groupFour = matcher.group(4);
+        }
+
+        if (Objects.nonNull(groupOne)) {
+            return Objects.nonNull(groupFour) ? groupOne + groupFour : groupOne;
+        } else if (Objects.nonNull(groupFour)) {
+            return groupFour;
+        }
+
+        return "0";
+    }
+
+    private static String valueOf(String value, String format, Pattern pattern) {
+        value = cleanNumber(value);
+        Matcher matcher = DECIMAL_PATTERN.matcher(value);
+        if (!matcher.matches()) {
+            log.info("Value [{}] does not match format [{}], pattern [{}]", value, format, pattern);
+            throw new RuntimeException("Bad value [" + value + "]");
+        }
+
+        return canonicalNumber(value);
     }
 
     public static String transformWithFormat(String qualifiedFormat, String value) {
@@ -210,12 +258,19 @@ public class IxtTransform {
             case "num-dot-decimal":
             case "numdotdecimal": {
                 Matcher matcher = NUM_DOT_DECIMAL.matcher(value);
-                if (matcher.matches()) {
+                if (matcher.matches())
                     return cleanNumber(value);
-                } else {
-                    log.info("Value [{}] does not match format [{}], pattern [{}]", value, format, NUM_DOT_DECIMAL);
-                    throw new RuntimeException("Bad value [" + value + "]");
-                }
+
+                matcher = NUM_DOT_DECIMAL_TR4.matcher(value);
+                if (matcher.matches())
+                    return valueOf(value, format, NUM_DOT_DECIMAL_TR4);
+
+                matcher = NUM_DOT_DECIMAL_APOS.matcher(value);
+                if (matcher.matches())
+                    return valueOf(value, format, NUM_DOT_DECIMAL_APOS);
+
+                log.info("Value [{}] does not match format [{}], pattern [{}]", value, format, NUM_DOT_DECIMAL);
+                throw new RuntimeException("Bad value [" + value + "]");
             }
 
             case "numdotdecimalin": {
@@ -291,11 +346,13 @@ public class IxtTransform {
             case "datemonthyearen":
             case "datedaymonthyear":
             case "datedaymonthyearen":
+            case "date-day-monthname-year-en":
             case "dateyearmonthday":
             case "datequarterend":
             case "date-month-day":
             case "datemonthday":
             case "date-month-day-en":
+            case "date-monthname-day-en":
             case "datemonthdayen":
             case "date-monthname-day-year-en":
             case "date-month-day-year-en":

@@ -230,6 +230,14 @@ public final class ArcroleType {
         return arcroleURI.equals(ALL_URI);
     }
 
+    public boolean isNotAll() {
+        return arcroleURI.equals(NOT_ALL_URI);
+    }
+
+    public boolean isGeneralSpecial() {
+        return arcroleURI.equals(GENERAL_SPECIAL_URI);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

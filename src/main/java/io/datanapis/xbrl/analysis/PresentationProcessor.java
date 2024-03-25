@@ -23,12 +23,16 @@ import io.datanapis.xbrl.model.*;
  */
 public interface PresentationProcessor {
     enum ReportingPeriodType {
-        MRQ("MRQ"),     // Most recent quarter
-        PRQ("Previous Quarter"),
-        MRQ_MINUS_ONE_YEAR("MRQ, Previous Year"),
-        YTD("YTD"),     // Year to date
-        YTD_MINUS_ONE("Previous Year"),
-        NOT_CLASSIFIED("Not Classified");
+        MRQ("MRQ"),                      // Most recent quarter
+        PRIOR_QUARTER("PQ"),             // Prior quarter
+        YTD("YTD"),                      // Year to date, used only for year-to-date results
+        FY("FY"),                        // Financial year, used only for full-year duration results
+        MOST_RECENT_VALUE("MRV"),        // Most recent value - for point-in-time values such as balance sheets
+        PRIOR_YEAR_QUARTER("PYQ"),       // Same quarter results for previous year
+        PRIOR_YEAR_TO_DATE("PYTD"),      // YTD for the previous year
+        PFY("PFY"),                      // Previous financial year
+        BEGINNING_OF_PERIOD("BOP"),      // Beginning of period - only valid for instants
+        NOT_CLASSIFIED("Unclassified");
 
         private final String value;
 
@@ -59,8 +63,16 @@ public interface PresentationProcessor {
     /* Start of a root within a presentation network */
     default void rootStart(PresentationGraphNode root) {}
 
+    default void rootStart(PresentationGraphNode root, PresentationInfoProvider infoProvider) {
+        rootStart(root);
+    }
+
     /* End of a root within a presentation network */
     default void rootEnd(PresentationGraphNode root) {}
+
+    default void rootEnd(PresentationGraphNode root, PresentationInfoProvider infoProvider) {
+        rootEnd(root);
+    }
 
     /* Start of a period within a root */
     default void periodStart(PresentationGraphNode root, Period period, ReportingPeriodType rpType) {}
@@ -68,7 +80,11 @@ public interface PresentationProcessor {
     /* End of a period within a root */
     default void periodEnd(PresentationGraphNode root, Period period) {}
 
-    /* Start of an internal node within the network - simple - this version is never called directly */
+    default void periodEnd(PresentationGraphNode root, Period period, ReportingPeriodType rpType) {
+        periodEnd(root, period);
+    }
+
+    /* Start of an internal node within the network */
     default void internalNodeStart(PresentationGraphNode node, int level) {}
 
     /* End of an internal node within the network */

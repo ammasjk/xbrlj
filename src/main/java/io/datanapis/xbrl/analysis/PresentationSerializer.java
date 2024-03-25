@@ -18,10 +18,16 @@ package io.datanapis.xbrl.analysis;
 import com.google.gson.*;
 import io.datanapis.xbrl.model.*;
 import io.datanapis.xbrl.utils.EdgarUtils;
+import lombok.extern.slf4j.Slf4j;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.zip.GZIPOutputStream;
 
-public class PresentationSerializer extends AbstractSerializer implements PresentationProcessor {
+@Slf4j
+public final class PresentationSerializer extends AbstractSerializer implements PresentationProcessor {
     private static final String BALANCE = "balance";
     private static final String DISCLOSURE = "Disclosure";
     private static final String DISCLOSURES = "disclosures";
@@ -31,6 +37,7 @@ public class PresentationSerializer extends AbstractSerializer implements Presen
     private static final String LABEL = "label";
     private static final String LABEL_TYPE = "labelType";
     private static final String LEVEL = "level";
+    private static final String LEVEL_INCREMENT = "levelIncrement";
     private static final String SCHEDULE = "Schedule";
     private static final String STATEMENT = "Statement";
     private static final String STATEMENTS = "statements";
@@ -41,13 +48,13 @@ public class PresentationSerializer extends AbstractSerializer implements Presen
     private final JsonArray documents;
     private final JsonArray statements;
     private final JsonArray disclosures;
-    private final Deque<Integer> levels = new ArrayDeque<>();
 
     public PresentationSerializer() {
-        this(true);
+        this(false);
     }
 
     public PresentationSerializer(boolean separateTables) {
+        super(false);
         this.separateTables = separateTables;
         documents = new JsonArray();
         statements = new JsonArray();
@@ -63,12 +70,16 @@ public class PresentationSerializer extends AbstractSerializer implements Presen
     }
 
     private int topLevel() {
-        return levels.peek();
+        JsonObject o = top();
+        assert Objects.nonNull(o);
+        JsonElement element = o.get(LEVEL);
+        assert Objects.nonNull(element);
+        assert element.isJsonPrimitive();
+        return element.getAsInt();
     }
 
     private static String getLabel(PresentationGraphNode graphNode) {
-        String label = graphNode.getLabel();
-        return label;
+        return graphNode.getLabel();
     }
 
     private static String getLabelType(PresentationGraphNode node) {
@@ -100,33 +111,15 @@ public class PresentationSerializer extends AbstractSerializer implements Presen
             currentRoleType.addProperty(TITLE, title);
 
             switch (type) {
-                case DISCLOSURE:
-                    disclosures.add(currentRoleType);
-                    break;
-
-                case STATEMENT:
-                    statements.add(currentRoleType);
-                    break;
-
-                case DOCUMENT:
-                    documents.add(currentRoleType);
-                    break;
-
-                case SCHEDULE:
-                default:
-                    break;
+                case DISCLOSURE -> disclosures.add(currentRoleType);
+                case STATEMENT -> statements.add(currentRoleType);
+                case DOCUMENT -> documents.add(currentRoleType);
+                default -> {
+                }
             }
         }
 
         super.end();
-    }
-
-    @Override
-    public void rootStart(PresentationGraphNode root) {
-    }
-
-    @Override
-    public void rootEnd(PresentationGraphNode root) {
     }
 
     @Override
@@ -139,58 +132,52 @@ public class PresentationSerializer extends AbstractSerializer implements Presen
         super.periodEnd(period);
     }
 
-    private static void addConceptProperties(JsonObject object, PresentationGraphNode node) {
+    private static void addConceptProperties(JsonObject object, PresentationGraphNode node, int level) {
         Concept concept = node.getConcept();
         object.addProperty(NAME, concept.getQualifiedName());
         object.addProperty(LABEL, getLabel(node));
         object.addProperty(LABEL_TYPE, getLabelType(node));
         object.addProperty(BALANCE, concept.getBalance().toString());
-    }
-
-    private static void addConceptProperties(JsonObject object, PresentationGraphNode node, int level) {
-        addConceptProperties(object, node);
         object.addProperty(LEVEL, level);
-    }
-
-    private void addPrevious(int level) {
-        if (!levels.isEmpty()) {
-            if (level <= topLevel()) {
-                while (!levels.isEmpty() && level <= topLevel()) {
-                    levels.pop();
-                    super.nodeEnd();
-                }
-            }
-        }
     }
 
     @Override
     public void internalNodeStart(PresentationGraphNode node, int level) {
-        addPrevious(level);
         JsonObject object = super.nodeStart();
         addConceptProperties(object, node, level);
     }
 
     @Override
     public void internalNodeEnd(PresentationGraphNode node, int level) {
-        addPrevious(level);
-        super.nodeEnd();
     }
 
-    private JsonObject makeFact(PresentationGraphNode node, Fact fact) {
+    private JsonObject makeFact(PresentationGraphNode node, int level, Fact fact) {
         JsonObject object = super.nodeStart();
 
         Concept concept = node.getConcept();
-        addConceptProperties(object, node);
+        addConceptProperties(object, node, level);
 
-        String name = concept.getName();
-        String type = concept.getTypeName();
-        if (type.equals("textBlockItemType") || name.endsWith("Text") || name.endsWith("TextBlock") || name.endsWith("Policy")) {
+        if (concept.isText()) {
             String html = Fact.getValue(fact);
             TextBlockProcessor textProcessor = new TextBlockProcessor(html, separateTables);
             object.addProperty(VALUE, textProcessor.getParagraphs());
             if (separateTables) {
-                String tables = textProcessor.getTablesAsHTML();
-                object.addProperty(TABLE_HTML, tables);
+                JsonArray array = new JsonArray();
+                textProcessor.getTables(tableHtml -> {
+                    try {
+                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                        GZIPOutputStream gzipOutputStream = new GZIPOutputStream(byteArrayOutputStream);
+                        gzipOutputStream.write(tableHtml.getBytes(StandardCharsets.UTF_8));
+                        gzipOutputStream.close();
+                        byteArrayOutputStream.close();
+
+                        byte[] bytes = byteArrayOutputStream.toByteArray();
+                        array.add(Base64.getEncoder().encodeToString(bytes));
+                    } catch (IOException e) {
+                        log.info("");
+                    }
+                });
+                object.add(TABLE_HTML, array);
             }
         } else {
             if (fact.getLongValue() != null) {
@@ -229,37 +216,37 @@ public class PresentationSerializer extends AbstractSerializer implements Presen
 
     @Override
     public void lineItem(PresentationGraphNode node, int level, Fact fact) {
-        addPrevious(level);
-        levels.push(level);
-        makeFact(node, fact);
+        makeFact(node, level, fact);
     }
 
     @Override
     public void lineItem(PresentationGraphNode node, int level, DimensionedFact fact, PresentationInfoProvider infoProvider) {
-        addPrevious(level);
-        levels.push(level);
-        JsonObject object = makeFact(node, fact.getFact());
+        JsonObject object = makeFact(node, level, fact.getFact());
 
         JsonArray array = new JsonArray();
         if (fact.getDimensions() != null) {
             List<ExplicitMember> dimensions = fact.getDimensions();
-            for (ExplicitMember member : dimensions) {
-                Pair<String, String> labels = infoProvider.getLabel(member);
+            for (int i = 0; i < dimensions.size(); i++) {
+                ExplicitMember member = dimensions.get(i);
+                LabelPair labels = infoProvider.getLabel(node, member);
                 JsonObject qualifier = new JsonObject();
                 qualifier.addProperty(AXIS, member.getDimension().getQualifiedName());
                 qualifier.addProperty(AXIS_VALUE, labels.getFirst());
                 qualifier.addProperty(MEMBER, member.getMember().getQualifiedName());
                 qualifier.addProperty(MEMBER_VALUE, labels.getSecond());
+                qualifier.addProperty(LEVEL_INCREMENT, infoProvider.level(node, dimensions.subList(0, i + 1)));
                 array.add(qualifier);
             }
         } else if (fact.getTypedMembers() != null) {
+            int levelIncrement = 1;
             for (TypedMember member : fact.getTypedMembers()) {
-                String axisLabel = infoProvider.getAxisLabel(member.getDimension());
+                String axisLabel = infoProvider.getAxisLabel(node, member.getDimension());
                 JsonObject qualifier = new JsonObject();
                 qualifier.addProperty(AXIS, member.getDimension().getQualifiedName());
                 qualifier.addProperty(AXIS_VALUE, axisLabel);
                 qualifier.addProperty(MEMBER, member.getMember());
                 qualifier.addProperty(MEMBER_VALUE, member.getMember());
+                qualifier.addProperty(LEVEL_INCREMENT, levelIncrement);
                 array.add(qualifier);
             }
         }

@@ -15,6 +15,7 @@
  */
 package io.datanapis.xbrl.model;
 
+import java.time.LocalDate;
 import java.util.*;
 import java.util.function.Predicate;
 
@@ -30,14 +31,10 @@ public final class TimeOrdered<T> extends TreeMap<Period,Collection<T>> {
     public TimeOrdered<T> filter(Predicate<T> predicate) {
         TimeOrdered<T> filteredMap = new TimeOrdered<>();
         for (Map.Entry<Period,Collection<T>> entry : this.entrySet()) {
-            List<T> l = new ArrayList<>();
             for (T element : entry.getValue()) {
                 if (predicate.test(element)) {
-                    l.add(element);
+                    filteredMap.add(entry.getKey(), element);
                 }
-            }
-            if (l.size() > 0) {
-                filteredMap.put(entry.getKey(), l);
             }
         }
 

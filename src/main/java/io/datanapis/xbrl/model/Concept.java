@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.LocalDate;
 import java.util.*;
+import java.util.stream.Stream;
 
 public final class Concept {
     private static final Set<String> CONCEPT_ATTRIBUTES = new HashSet<>();
@@ -46,6 +47,10 @@ public final class Concept {
         CONCEPT_ATTRIBUTES.add(TagNames.TYPED_DOMAIN_REF_TAG);
     }
     private static final String MONETARY_ITEM_TYPE = "monetaryItemType";
+    private static final String PERCENT_ITEM_TYPE = "percentItemType";
+    private static final String TEXT_BLOCK_ITEM_TYPE = "textBlockItemType";
+    private static final String XML_ITEM_TYPE = "xmlItemType";
+    private static final String XML_NODES_ITEM_TYPE = "xmlNodesItemType";
 
     public enum Balance {
         NONE("none"),
@@ -135,6 +140,7 @@ public final class Concept {
     private String typedDomainRef;
     private LocalDate deprecatedDate;
     private final RoleLabelMap labelMap = new RoleLabelMap();
+    private List<Reference> references = null;
     private final List<Fact> facts = new ArrayList<>();
 
     public String getSourceUrl() {
@@ -170,6 +176,10 @@ public final class Concept {
     }
 
     public boolean isAbstractConcept() {
+        return isAbstract();
+    }
+
+    public boolean isAbstract() {
         return abstractConcept;
     }
 
@@ -194,7 +204,25 @@ public final class Concept {
     }
 
     public boolean isMonetaryConcept() {
+        return isMonetary();
+    }
+
+    public boolean isMonetary() {
         return this.getTypeName().equals(MONETARY_ITEM_TYPE);
+    }
+
+    public boolean isPercent() {
+        return this.getTypeName().equals(PERCENT_ITEM_TYPE);
+    }
+
+    private static final Set<String> TEXT_ITEM_TYPES =
+            Set.of(TEXT_BLOCK_ITEM_TYPE.toLowerCase(), XML_NODES_ITEM_TYPE.toLowerCase(), XML_ITEM_TYPE.toLowerCase());
+    private static boolean isTextType(String type) {
+        return Objects.nonNull(type) && TEXT_ITEM_TYPES.contains(type);
+    }
+
+    public boolean isText() {
+        return isTextType(getTypeName()) || name.endsWith("Text") || name.endsWith("TextBlock");
     }
 
     public Balance getBalance() {
@@ -223,6 +251,20 @@ public final class Concept {
 
     public void addLabels(RoleLabelMap labelMap) {
         this.labelMap.addAll(labelMap);
+    }
+
+    public void addReference(Reference reference) {
+        if (Objects.isNull(this.references)) {
+            this.references = new ArrayList<>();
+        }
+        this.references.add(reference);
+    }
+    public List<String> getReplacements() {
+        if (Objects.isNull(this.references))
+            return null;
+
+        return this.references.stream().map(Reference::getReplacements)
+                .filter(Objects::nonNull).flatMap(Collection::stream).toList();
     }
 
     public Collection<Label> getAllLabels() {
@@ -290,7 +332,7 @@ public final class Concept {
         }
 
         // Sample substitutionGroups:
-        //     xbrli:item
+        //     xbrli:item, xbrldt:hypercubeItem, xbrldt:dimensionItem
         value = element.attributeValue(TagNames.SUBSTITUTION_GROUP_TAG);
         if (value != null) {
             concept.substitutionGroup = element.getQName(value);
@@ -298,8 +340,9 @@ public final class Concept {
 
         // Sample types:
         //     xbrli:monetaryItemType, xbrli:sharesItemType, xbrli:gYearItemType, nonnum:textBlockItemType,
-        //     xbrli:durationItemType, num:perShareItemType, xbrli:pureItemType,
-        //     num:percentItemType, xbrli:integerItemType
+        //     xbrli:durationItemType, num:perShareItemType, xbrli:pureItemType, num:percentItemType,
+        //     xbrli:integerItemType, xbrli:nonNegativeIntegerItemType, xbrli:positiveIntegerItemType,
+        //     xbrli:nonPositiveIntegerItemType, xbrli:negativeIntegerItemType, xbrli:stringItemType, xbrli:dateTimeItemType, etc.
         value = element.attributeValue(TagNames.TYPE_TAG);
         if (value != null) {
             concept.type = element.getQName(value);

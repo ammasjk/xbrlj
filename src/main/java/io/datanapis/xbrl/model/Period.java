@@ -79,7 +79,7 @@ public interface Period extends Comparable<Period> {
                         } else if (i1.getDate().isAfter(r2.getEndDate())) {
                             return 1;
                         } else {
-                            /* i1 falls within r2. Prioritize duration over instant, helps with merging in PresentationNetwork */
+                            /* i1 falls within r2. Prioritize duration over instant, since it begins earlier */
                             return 1;
                         }
                 }
@@ -99,17 +99,19 @@ public interface Period extends Comparable<Period> {
                         }
                     case DURATION:
                         Duration r2 = (Duration)rhs;
+                        /* compare start dates, the one that start earlier goes first */
+                        if (r1.getStartDate().isBefore(r2.getStartDate())) {
+                            return -1;
+                        } else if (r1.getStartDate().isAfter(r2.getStartDate())) {
+                            return 1;
+                        }
+
+                        /* start dates are the same */
+                        assert r1.getStartDate().equals(r2.getStartDate());
                         if (r1.getEndDate().isBefore(r2.getEndDate())) {
                             return -1;
                         } else if (r1.getEndDate().isAfter(r2.getEndDate())) {
                             return 1;
-                        }
-
-                        /* r1 and r2 have the same end date, the shorter duration goes first */
-                        if (r1.getStartDate().isBefore(r2.getStartDate())) {
-                            return 1;
-                        } else if (r1.getStartDate().isAfter(r2.getStartDate())) {
-                            return -1;
                         }
 
                         return 0;

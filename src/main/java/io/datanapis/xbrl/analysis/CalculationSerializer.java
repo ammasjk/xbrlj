@@ -23,10 +23,11 @@ import io.datanapis.xbrl.utils.EdgarUtils;
 
 import java.util.Collection;
 
-public class CalculationSerializer extends AbstractSerializer implements CalculationProcessor {
+public final class CalculationSerializer extends AbstractSerializer implements CalculationProcessor {
     private final JsonArray calculations;
 
     public CalculationSerializer() {
+        super(true);
         this.calculations = new JsonArray();
     }
 
@@ -86,14 +87,6 @@ public class CalculationSerializer extends AbstractSerializer implements Calcula
     private static final String FACT_VALUE = "factValue";
     private static final String RESULT = "result";
 
-    private static void addNumericProperty(JsonObject object, String property, double value) {
-        if (value - (long)value < 0.0001) {
-            object.addProperty(property, (long)value);
-        } else {
-            object.addProperty(property, value);
-        }
-    }
-
     private static void addProperties(JsonObject object, CalculationGraphNode node, Fact fact) {
         Concept concept = node.getConcept();
         object.addProperty(NAME, concept.getQualifiedName());
@@ -123,7 +116,11 @@ public class CalculationSerializer extends AbstractSerializer implements Calcula
         JsonObject object = top();
         if (object.has(COMPONENTS)) {
             object.addProperty(RESULT, result.name());
-            addNumericProperty(object, COMPUTED_VALUE, computedValue);
+            if (computedValue - (long)computedValue < 0.0001) {
+                object.addProperty(COMPUTED_VALUE, (long)computedValue);
+            } else {
+                object.addProperty(COMPUTED_VALUE, computedValue);
+            }
         }
         super.nodeEnd();
     }

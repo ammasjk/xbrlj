@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableMap;
 import io.datanapis.xbrl.model.*;
 import io.datanapis.xbrl.model.arc.FromToArc;
 import io.datanapis.xbrl.model.arc.LabelArc;
+import io.datanapis.xbrl.model.arc.ReferenceArc;
 import io.datanapis.xbrl.model.link.*;
 import org.dom4j.*;
 import org.slf4j.Logger;
@@ -38,12 +39,22 @@ public class DiscoverableTaxonomySet {
     }
     private static final Logger log = LoggerFactory.getLogger(DiscoverableTaxonomySet.class);
 
+    private final Map<String,Namespace> namespaces = new HashMap<>();
     private final UriRoleTypeMap roleTypes = new UriRoleTypeMap();
     private final UriArcroleTypeMap arcroleTypes = new UriArcroleTypeMap();
     private final NameConceptMap nameConceptMap = new NameConceptMap();
     private final KeyConceptMap keyConceptMap = new KeyConceptMap();
+    /*
+     * Some schema's such as cef-2022.xsd reference labels defined in other schemas such as dei-2022_lab.xsd. e.g., label_EntityFileNumber
+     * The implication is that labels can be cross-referenced and therefore need to be global. This is the first instance of
+     * such a use-case. Not sure, if this will be common in the future. If it does, then we will need to make the mapping between
+     * the label href and the LabelLink global. When resolving we can try to resolve labels locally first before trying this
+     * global map.
+     */
+    private final LabelLinkMap labelLinkMap = new LabelLinkMap();
 
     public void clear() {
+        namespaces.clear();
         roleTypes.clear();
         arcroleTypes.clear();
 
@@ -52,6 +63,13 @@ public class DiscoverableTaxonomySet {
 
         keyConceptMap.forEach((k, v) -> v.clear());
         keyConceptMap.clear();
+    }
+
+    public void addNamespace(Namespace namespace) {
+        if (Objects.isNull(namespace.getPrefix()))
+            return;
+
+        namespaces.putIfAbsent(namespace.getPrefix(), namespace);
     }
 
     public RoleType getRoleType(String roleURI) {
@@ -113,6 +131,36 @@ public class DiscoverableTaxonomySet {
 
     public Collection<Concept> getAllConcepts() {
         return nameConceptMap.values();
+    }
+
+    public Collection<Concept> asConcepts(List<String> names) {
+        Set<Concept> concepts = new HashSet<>();
+        for (String name : names) {
+            int i = name.indexOf(':');
+            if (i < 0)
+                continue;
+
+            String prefix = name.substring(0, i);
+            String conceptName = name.substring(i + 1);
+            Namespace namespace = namespaces.get(prefix);
+            if (Objects.isNull(namespace))
+                continue;
+
+            QName qName = new QName(conceptName, namespace);
+            Concept concept = nameConceptMap.get(qName);
+            if (Objects.nonNull(concept))
+                concepts.add(concept);
+        }
+
+        return concepts;
+    }
+
+    public void addLabelLink(String href, LabelLink labelLink) {
+        labelLinkMap.put(href, labelLink);
+    }
+
+    public LabelLink getLabelLink(String href) {
+        return labelLinkMap.get(href);
     }
 
     public static class Statistics {
@@ -186,8 +234,10 @@ public class DiscoverableTaxonomySet {
         }
     }
 
-    private static final String ECD_SUB_2023_XSD = "ecd-sub-2023.xsd";
-    private static final String ECD_2023_XSD_URL = "https://xbrl.sec.gov/ecd/2023/ecd-2023.xsd";
+    private static final Map<String,String> SCHEMA_DEPENDENCY =
+            Map.of( "exch-entire-2024.xsd", "https://xbrl.sec.gov/exch/2024/exch-2024.xsd",
+                    "ecd-sub-2023.xsd", "https://xbrl.sec.gov/ecd/2023/ecd-2023.xsd",
+                    "cef-2022.xsd", "https://xbrl.sec.gov/dei/2022/dei-2022_lab.xsd");
 
     /**
      * Collect all the urls that will need to be traversed in the order in which they need to be traversed.
@@ -221,9 +271,11 @@ public class DiscoverableTaxonomySet {
                         // Handle any schema imports
                         //
                         String schemaLocation = schemaLocationToUrl(child.attributeValue(TagNames.SCHEMA_LOCATION_TAG));
-                        if (schemaLocation.contains(ECD_SUB_2023_XSD)) {
-                            log.debug("Adding [{}] to queue", ECD_2023_XSD_URL);
-                            todo.add(new SchemaLocation(resolver.getAbsolutePath(url.absolutePath, ECD_2023_XSD_URL)));
+                        for (var pair : SCHEMA_DEPENDENCY.entrySet()) {
+                            if (schemaLocation.contains(pair.getKey())) {
+                                log.info("Adding [{}] to queue", pair.getValue());
+                                todo.add(new SchemaLocation(resolver.getAbsolutePath(url.absolutePath, pair.getValue())));
+                            }
                         }
                         log.debug("Adding [{}] to queue", schemaLocation);
                         todo.add(new SchemaLocation(resolver.getAbsolutePath(url.absolutePath, schemaLocation)));
@@ -308,17 +360,25 @@ public class DiscoverableTaxonomySet {
 
     private class LinkedTaxonomyProcessor {
         private final List<LabelLink> labelLinks;
+        private final List<ReferenceLink> referenceLinks;
         private final SchemaLocation url;
         private final Element linkedElement;
         private final String targetNamespace;
         private final boolean reportable;
         private final List<Element> linkBaseRoots = new ArrayList<>();
 
-        private LinkedTaxonomyProcessor(String rootSchema, List<LabelLink> labelLinks, SchemaLocation url, Element linkedElement) {
+        private LinkedTaxonomyProcessor(String rootSchema, List<LabelLink> labelLinks, List<ReferenceLink> referenceLinks, SchemaLocation url, Element linkedElement) {
             this.labelLinks = labelLinks;
+            this.referenceLinks = referenceLinks;
             this.url = url;
             this.linkedElement = linkedElement;
             this.targetNamespace = linkedElement.attributeValue(TagNames.TARGET_NAMESPACE_TAG);
+            Namespace namespace = linkedElement.getNamespaceForURI(targetNamespace);
+            if (Objects.nonNull(namespace)) {
+                DiscoverableTaxonomySet.this.addNamespace(namespace);
+            } else {
+                int y = 5;
+            }
             this.reportable = isReportable(url.absolutePath, rootSchema);
         }
 
@@ -389,6 +449,9 @@ public class DiscoverableTaxonomySet {
             } else if (childName.equals(TagNames.LABEL_LINK_TAG)) {
                 LabelLink link = LabelLink.fromElement(url.absolutePath, DiscoverableTaxonomySet.this, child);
                 labelLinks.add(link);
+            } else if (childName.equals(TagNames.REFERENCE_LINK_TAG)) {
+                ReferenceLink link = ReferenceLink.fromElement(url.absolutePath, DiscoverableTaxonomySet.this, child);
+                referenceLinks.add(link);
             } else {
                 log.info("Ignoring child [{}] of [{}]", childName, linkedElement.getQualifiedName());
             }
@@ -441,6 +504,7 @@ public class DiscoverableTaxonomySet {
      */
     private void read(XbrlReader.Resolver resolver, String rootSchema) {
         final List<LabelLink> labelLinks = new ArrayList<>();
+        final List<ReferenceLink> referenceLinks = new ArrayList<>();
         final Collection<SchemaLocation> todo = collect(resolver, rootSchema);
 
         for (SchemaLocation url : todo) {
@@ -449,7 +513,7 @@ public class DiscoverableTaxonomySet {
             try {
                 Element linkedElement = resolver.getRootElement(url.absolutePath);
                 LinkedTaxonomyProcessor linkedTaxonomyProcessor =
-                        new LinkedTaxonomyProcessor(rootSchema, labelLinks, url, linkedElement);
+                        new LinkedTaxonomyProcessor(rootSchema, labelLinks, referenceLinks, url, linkedElement);
                 linkedTaxonomyProcessor.ingest();
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -457,6 +521,7 @@ public class DiscoverableTaxonomySet {
         }
 
         this.connectConceptsToLabels(labelLinks);
+        this.connectConceptsToReferences(referenceLinks);
         this.connectArcs();
     }
 
@@ -466,7 +531,30 @@ public class DiscoverableTaxonomySet {
                 Location location = arc.getFrom();
                 Concept concept = keyConceptMap.get(location.getHref());
                 RoleLabelMap label = arc.getTo();
-                concept.addLabels(label);
+                if (label != null) {
+                    if (concept != null) {
+                        concept.addLabels(label);
+                    } else {
+                        throw new RuntimeException("Concept is null! location.href = [" + location.getHref() + "]");
+                    }
+                } else if (Objects.nonNull(arc.getUse()) && !arc.getUse().equalsIgnoreCase(TagNames.PROHIBITED_USE)) {
+                    log.info("arc.To is null but use is not [{}]", TagNames.PROHIBITED_USE);
+                }
+            }
+        }
+    }
+
+    private void connectConceptsToReferences(List<ReferenceLink> referenceLinks) {
+        for (ReferenceLink link : referenceLinks) {
+            for (ReferenceArc arc : link.getAllArcs()) {
+                Location location = arc.getFrom();
+                Concept concept = keyConceptMap.get(location.getHref());
+                Reference reference = arc.getTo();
+                if (reference != null) {
+                    if (concept != null) {
+                        concept.addReference(reference);
+                    }
+                }
             }
         }
     }
@@ -541,7 +629,9 @@ public class DiscoverableTaxonomySet {
         arcroleTypes.put(ArcroleType.DEPRECATED_AGGREGATE_CONCEPT.getArcroleURI(), ArcroleType.DEPRECATED_AGGREGATE_CONCEPT);
         arcroleTypes.put(ArcroleType.EXPLANATORY_FACT.getArcroleURI(), ArcroleType.EXPLANATORY_FACT);
 
+        RoleType.clear();
         roleTypes.put(RoleType.DEPRECATED.getRoleURI(), RoleType.DEPRECATED);
+        roleTypes.put(RoleType.DISCLOSURE.getRoleURI(), RoleType.DISCLOSURE);
         roleTypes.put(RoleType.COMMON_PRACTICE_REF.getRoleURI(), RoleType.COMMON_PRACTICE_REF);
         roleTypes.put(RoleType.NON_AUTHORITATIVE_LITERATURE_REF.getRoleURI(), RoleType.NON_AUTHORITATIVE_LITERATURE_REF);
         roleTypes.put(RoleType.RECOGNITION_REF.getRoleURI(), RoleType.RECOGNITION_REF);

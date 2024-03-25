@@ -15,7 +15,6 @@
  */
 package io.datanapis.xbrl.model;
 
-import com.google.common.hash.HashCode;
 import io.datanapis.xbrl.TagNames;
 import io.datanapis.xbrl.utils.Utils;
 import org.apache.commons.lang3.builder.HashCodeBuilder;

@@ -17,8 +17,12 @@ package io.datanapis.xbrl.utils;
 
 import io.datanapis.xbrl.TagNames;
 import org.dom4j.Element;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class IxNonFraction {
+    private static final Logger log = LoggerFactory.getLogger(IxNonFraction.class);
+
     private final int decimals;
     private final int scale;
     private final String format;
@@ -94,7 +98,7 @@ public class IxNonFraction {
                 try {
                     decimals = Integer.parseInt(d);
                 } catch (NumberFormatException e) {
-                    e.printStackTrace();
+                    log.info("Invalid value for decimals attribute [{}]", d);
                 }
             } else {
                 decimals = Integer.MAX_VALUE;

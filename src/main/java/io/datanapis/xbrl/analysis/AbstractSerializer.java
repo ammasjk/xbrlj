@@ -22,9 +22,11 @@ import io.datanapis.xbrl.model.Instant;
 import io.datanapis.xbrl.model.Period;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 
-public abstract class AbstractSerializer {
+public abstract sealed class AbstractSerializer permits PresentationSerializer, CalculationSerializer {
     protected static final String AXIS = "axis";
     protected static final String AXIS_VALUE = "axisValue";
     protected static final String COMPONENTS = "components";
@@ -47,7 +49,14 @@ public abstract class AbstractSerializer {
     protected JsonObject currentRoleType = null;
     protected JsonArray reportingPeriods = null;
     protected JsonObject currentPeriod = null;
-    private final Deque<JsonObject> data = new ArrayDeque<>();
+
+    protected final boolean nest;
+    private final List<JsonObject> data = new ArrayList<>();
+
+
+    protected AbstractSerializer(boolean nest) {
+        this.nest = nest;
+    }
 
     protected void start() {
         currentRoleType = new JsonObject();
@@ -91,18 +100,29 @@ public abstract class AbstractSerializer {
     }
 
     protected void periodEnd(Period period) {
+        if (!nest) {
+            JsonArray array = new JsonArray();
+            for (JsonObject obj : data) {
+                array.add(obj);
+            }
+            currentPeriod.add(DATA, array);
+            data.clear();
+        }
         reportingPeriods.add(currentPeriod);
         currentPeriod = null;
     }
 
     protected JsonObject nodeStart() {
         JsonObject object = new JsonObject();
-        data.push(object);
+        data.add(object);
         return object;
     }
 
     protected void nodeEnd() {
-        JsonObject node = data.pop();
+        if (!nest)
+            return;
+
+        JsonObject node = data.remove(data.size() - 1);
         if (data.isEmpty()) {
             currentPeriod.add(DATA, node);
         } else {
@@ -117,6 +137,6 @@ public abstract class AbstractSerializer {
     }
 
     protected JsonObject top() {
-        return data.peek();
+        return data.isEmpty() ? null : data.get(data.size()- 1);
     }
 }

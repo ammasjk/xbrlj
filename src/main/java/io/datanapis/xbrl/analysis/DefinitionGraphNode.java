@@ -17,9 +17,32 @@ package io.datanapis.xbrl.analysis;
 
 import io.datanapis.xbrl.model.Concept;
 import io.datanapis.xbrl.model.arc.DefinitionArc;
+import io.datanapis.xbrl.model.arc.PresentationArc;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class DefinitionGraphNode extends GraphNode<DefinitionArc> {
     public DefinitionGraphNode(Concept concept, DefinitionArc arc) {
         super(concept, arc);
+    }
+
+    void walk(DefinitionNetworkConsumer consumer, Deque<DefinitionGraphNode> path) {
+        for (GraphNode<DefinitionArc> graphNode : this.getOutLinks()) {
+            DefinitionGraphNode node = (DefinitionGraphNode)graphNode;
+            consumer.nodeStart(node, path);
+            if (node.hasChildren()) {
+                path.push(node);
+                node.walk(consumer, path);
+                path.pop();
+            }
+            consumer.nodeEnd(node, path);
+        }
+    }
+
+    public void walk(DefinitionNetworkConsumer consumer) {
+        Deque<DefinitionGraphNode> path = new ArrayDeque<>();
+        path.push(this);
+        walk(consumer, path);
     }
 }

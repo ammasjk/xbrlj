@@ -19,5 +19,5 @@ import io.datanapis.xbrl.model.arc.FromToArc;
 
 import java.util.ArrayList;
 
-public class LineItems<ArcType extends FromToArc<ArcType>, NodeType extends GraphNode<ArcType> > extends ArrayList<NodeType> {
+public class LineItems<ArcType extends FromToArc<ArcType>, NodeType extends GraphNode<ArcType>> extends ArrayList<NodeType> {
 }

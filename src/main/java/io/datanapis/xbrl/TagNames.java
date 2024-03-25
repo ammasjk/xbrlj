@@ -39,11 +39,14 @@ public class TagNames {
     public static final String DEFINITION_LINK_TAG = "definitionLink";
     public static final String DEFINITION_TAG = "definition";
     public static final String DEPRECATED_DATE_TAG = "deprecatedDate";
+    public static final String DEPRECATED_DATE_2_TAG = "DeprecatedDate";
+    public static final String DEPRECATION_REPLACEMENT_TAG = "DeprecationReplacement";
     public static final String DIMENSION_TAG = "dimension";
     public static final String DIVIDE_TAG = "divide";
     public static final String DOCUMENTATION_TAG = "documentation";
     public static final String DOMAIN_TAG = "domain";
     public static final String ELEMENT_TAG = "element";
+    public static final String ELEMENT_DEPRECATED_TAG = "ElementDeprecated";
     public static final String END_DATE_TAG = "endDate";
     public static final String ENTITY_TAG = "entity";
     public static final String EXPLICIT_MEMBER_TAG = "explicitMember";
@@ -78,6 +81,10 @@ public class TagNames {
     public static final String PRESENTATION_ARC_TAG = "presentationArc";
     public static final String PRESENTATION_LINK_TAG = "presentationLink";
     public static final String PRIORITY_TAG = "priority";
+    public static final String PROHIBITED_USE = "prohibited";
+    public static final String REFERENCE_TAG = "reference";
+    public static final String REFERENCE_ARC_TAG = "referenceArc";
+    public static final String REFERENCE_LINK_TAG = "referenceLink";
     public static final String ROLE_REF_TAG = "roleRef";
     public static final String ROLE_TAG = "role";
     public static final String ROLE_TYPE_TAG = "roleType";

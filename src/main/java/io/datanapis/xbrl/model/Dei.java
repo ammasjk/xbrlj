@@ -16,14 +16,17 @@
 package io.datanapis.xbrl.model;
 
 import io.datanapis.xbrl.XbrlInstance;
+import io.datanapis.xbrl.utils.EdgarUtils;
 import io.datanapis.xbrl.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.DateTimeException;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.time.MonthDay;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,11 +35,11 @@ public final class Dei {
     private static final Pattern TICKER = Pattern.compile("^[A-Z0-9].*$");
 
     private LocalDate dateFiled;
+    private LocalDate estimatedPeriodEndDate;
     private boolean amendmentFlag = false;
     private String amendmentDescription = null;
-    private String yearEndDate = "";
+    private MonthDay yearEndDate = null;
     private Context primaryContext = null;
-    private List<String> tickers = null;
     private final DocumentInformation documentInformation = new DocumentInformation();
     private final EntityInformation entityInformation = new EntityInformation();
     private final ContextMap<Long> sharesOutstandingMap = new ContextMap<>();
@@ -47,8 +50,6 @@ public final class Dei {
     }
 
     public void clear() {
-        if (tickers != null)
-            tickers.clear();
         sharesOutstandingMap.clear();
         securityInformationMap.clear();
     }
@@ -60,10 +61,16 @@ public final class Dei {
         this.dateFiled = dateFiled;
     }
 
+    public LocalDate getEstimatedPeriodEndDate() {
+        return this.estimatedPeriodEndDate;
+    }
+    public void setEstimatedPeriodEndDate(LocalDate endDate) {
+        this.estimatedPeriodEndDate = endDate;
+    }
+
     public boolean isAmendmentFlag() {
         return amendmentFlag;
     }
-
     public String getAmendmentDescription() {
         return amendmentDescription;
     }
@@ -84,7 +91,7 @@ public final class Dei {
         return entityInformation.getRegistrantName();
     }
 
-    public String getYearEndDate() {
+    public MonthDay getYearEndDate() {
         return yearEndDate;
     }
 
@@ -105,31 +112,22 @@ public final class Dei {
     }
 
     public List<String> getTickers() {
-        if (tickers != null)
-            return tickers;
-
-        this.tickers = new ArrayList<>();
+        List<String> tickers = new ArrayList<>();
         for (Map.Entry<Context,SecurityInformation> entry : securityInformationMap.entrySet()) {
+            Context context = entry.getKey();
+            if (context.hasDimensions()) {
+                ExplicitMember explicitMember = context.getDimensions().iterator().next();
+                if (!explicitMember.getMember().getQualifiedName().startsWith("us-gaap:Common"))
+                    continue;
+            }
+
             SecurityInformation si = entry.getValue();
             if (si.getTradingSymbol() != null) {
-                Matcher matcher = TICKER.matcher(si.getTradingSymbol());
-                if (!matcher.matches()) {
-                    tickers.add(si.getTradingSymbol());;
-                }
+                tickers.add(si.getTradingSymbol());;
             }
         }
 
         return tickers;
-    }
-
-    public String getTicker() {
-        if (tickers == null)
-            getTickers();
-
-        if (tickers.size() > 0)
-            return tickers.get(0);
-
-        return null;
     }
 
     public DocumentInformation getDocumentInformation() {
@@ -149,18 +147,18 @@ public final class Dei {
         String value = fact.getValue();
 
         switch (name) {
-            /* This is a must have */
+            /* This is a must-have */
             case "AmendmentFlag":
                 amendmentFlag = Boolean.parseBoolean(value);
                 break;
             case "AmendmentDescription":
                 amendmentDescription = value;
                 break;
-            /* This is a must have */
+            /* This is a must-have */
             case "CurrentFiscalYearEndDate":
-                yearEndDate = value;
+                yearEndDate = EdgarUtils.parseMonthDay(value);
                 break;
-            /* This is a must have */
+            /* This is a must-have */
             case "EntityCommonStockSharesOutstanding":
                 /* Not all shares counts are longs. We are truncating for simplicity! */
                 if (fact.getLongValue() != null) {
@@ -171,6 +169,11 @@ public final class Dei {
                 } else {
                     log.info("Common shares outstanding [{}] is neither long nor double", fact.getValue());
                 }
+                break;
+            case "AuditorName":
+            case "AuditorFirmId":
+            case "AuditorLocation":
+                /* TODO Need to handle this */
                 break;
             default:
                 if (SecurityInformation.isMember(name)) {
@@ -195,6 +198,56 @@ public final class Dei {
         }
     }
 
+    private static final int ALLOWANCE = 12;
+
+    public static int guessFiscalYear(Dei dei, LocalDate periodEndDate) {
+        MonthDay yearEndDate = dei.getYearEndDate();
+
+        /* this will be the case most of the time, e.g. Q1 ends on yyyy-03-31 whereas the year-end is --12-31 */
+        if (periodEndDate.getMonthValue() <= yearEndDate.getMonthValue()) {
+            return periodEndDate.getYear();
+        }
+
+        /* this can happen if the fiscal year ends in the middle of the year, e.g. Apple, September 30 */
+        return periodEndDate.getYear() + 1;
+    }
+
+    public static String guessFiscalPeriod(Dei dei, LocalDate periodEndDate) {
+        MonthDay yearEndDate = dei.getYearEndDate();
+        LocalDate fiscalEnd;
+        try {
+            /* this logic won't work for 02/29. Hopefully, this won't be a common occurrence */
+            fiscalEnd = LocalDate.of(periodEndDate.getYear(), yearEndDate.getMonth(), yearEndDate.getDayOfMonth());
+        } catch (DateTimeException e) {
+            log.info("DateTimeException constructing LocalDate({}, {}, {}). [{}]",
+                    periodEndDate.getYear(), yearEndDate.getMonth(), yearEndDate.getDayOfMonth(), e.getMessage());
+            return dei.getFiscalPeriod();
+        }
+
+        long daysBetween = ChronoUnit.DAYS.between(periodEndDate, fiscalEnd);
+        if (daysBetween < 0 && Math.abs(daysBetween) >= ALLOWANCE) {
+            /* Can happen when fiscal year ends in the middle of a year, e,g. Apple's fiscal end is the end of September. */
+            fiscalEnd = fiscalEnd.plusYears(1);
+            daysBetween = ChronoUnit.DAYS.between(periodEndDate, fiscalEnd);
+        }
+
+        String fiscalPeriod = null;
+        if (Math.abs(daysBetween - 270) < ALLOWANCE) {
+            fiscalPeriod = "Q1";
+        } else if (Math.abs(daysBetween - 180) < ALLOWANCE) {
+            fiscalPeriod = "Q2";
+        } else if (Math.abs(daysBetween - 90) < ALLOWANCE) {
+            fiscalPeriod = "Q3";
+        } else if (Math.abs(daysBetween) < ALLOWANCE) {
+            fiscalPeriod = "FY";
+        }
+
+        if (fiscalPeriod == null)
+            return dei.getFiscalPeriod();
+
+        return fiscalPeriod;
+    }
+
     public static final class DocumentInformation {
         private String fiscalPeriod;
         private int fiscalYear;
@@ -206,6 +259,8 @@ public final class Dei {
         private LocalDate periodEndDate;
 
         public String getFiscalPeriod() {
+            if (Objects.isNull(fiscalPeriod))
+                return "";
             return fiscalPeriod;
         }
 
@@ -249,11 +304,11 @@ public final class Dei {
             String value = fact.getValue();
 
             switch (name) {
-                /* This is a must have */
+                /* This is a must-have, however, this can be incorrect */
                 case "DocumentFiscalPeriodFocus":
                     fiscalPeriod = Utils.trim(value);
                     break;
-                /* This is a must have */
+                /* This is a must-have, however, this can be incorrect */
                 case "DocumentFiscalYearFocus":
                     fiscalYear = Utils.asInt(value);
                     break;
@@ -266,13 +321,24 @@ public final class Dei {
                 case "DocumentTransitionReport":
                     transitionReport = Boolean.parseBoolean(value);
                     break;
-                /* This is a must have */
+                /* This is a must-have */
                 case "DocumentType":
                     documentType = Utils.trim(value);
                     break;
-                /* This is a must have */
+                /* This is a must-have */
                 case "DocumentPeriodEndDate":
-                    periodEndDate = Utils.asDate(value);
+                    try {
+                        periodEndDate = Utils.asDate(value);
+                    } catch (DateTimeParseException e) {
+                        /* If we are unable to parse the date value from the fact, we are going to guess it from the fact's context */
+                        Period contextPeriod = fact.getContext().getPeriod();
+                        if (contextPeriod instanceof Duration d) {
+                            periodEndDate = d.getEndDate();
+                            log.info("Setting periodEndDate to [{}] since [{}] is not parseable", periodEndDate.toString(), value);
+                        } else {
+                            throw new RuntimeException(e);
+                        }
+                    }
                     break;
                 default:
                     log.info("Unsupported field {} in class {}", name, this.getClass().getName());

@@ -18,14 +18,20 @@ package io.datanapis.xbrl.analysis;
 import io.datanapis.xbrl.model.Axis;
 import io.datanapis.xbrl.model.arc.PresentationArc;
 
-import java.util.Collection;
+import java.util.List;
 
-public class PresentationHypercube extends Hypercube<PresentationArc,PresentationGraphNode> {
-    PresentationHypercube(PresentationGraphNode root, LineItems<PresentationArc, PresentationGraphNode> lineItems) {
-        super(root, lineItems);
+public class PresentationHypercube extends Hypercube<PresentationArc, PresentationGraphNode, PresentationHypercube.PresentationAxis> {
+    PresentationHypercube(PresentationGraphNode table, LineItems<PresentationArc, PresentationGraphNode> lineItems) {
+        super(table, lineItems);
     }
 
-    PresentationHypercube(PresentationGraphNode root, Collection<Axis> axes, LineItems<PresentationArc, PresentationGraphNode> lineItems) {
-        super(root, axes, lineItems);
+    PresentationHypercube(PresentationGraphNode table, List<PresentationAxis> axes, LineItems<PresentationArc, PresentationGraphNode> lineItems) {
+        super(table, axes, lineItems);
+    }
+
+    static class PresentationAxis extends HypercubeAxis<PresentationArc,PresentationGraphNode> {
+        PresentationAxis(PresentationGraphNode dimension) {
+            super(dimension);
+        }
     }
 }

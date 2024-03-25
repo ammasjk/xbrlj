@@ -19,15 +19,17 @@ import io.datanapis.xbrl.model.*;
 import io.datanapis.xbrl.model.arc.PresentationArc;
 
 import java.io.PrintWriter;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class PresentationGraphNode extends GraphNode<PresentationArc> {
     PresentationGraphNode(Concept concept, PresentationArc arc) {
         super(concept, arc);
     }
 
-    void displayNode(String prefix, PrintWriter writer) {
-        writer.printf("%s [%s]  [%s]  =  [%s] [%s] [%.2f]:\n",
-                prefix, getConcept().getQualifiedName(), getArc().getPreferredLabelType(),
+    void displayNode(String prefix, int level, PrintWriter writer) {
+        writer.printf("%s [%d][%s][%s]  =  [%s] [%s] [%.2f]:\n",
+                prefix, level, getConcept().getQualifiedName(), getArc().getPreferredLabelType(),
                 getConcept().getBalance().toString(), getArc().getArcrole().getArcroleURI(), getArc().getOrder());
     }
 
@@ -76,5 +78,39 @@ public class PresentationGraphNode extends GraphNode<PresentationArc> {
             return label.isNegated();
 
         return false;
+    }
+
+    public boolean isTotal() {
+        /*
+         * Negated is only relevant in a presentation context. So, only consider preferred labels when determining
+         * if the value should be negated
+         */
+        if (getArc() == null || getArc().getPreferredLabel() == null)
+            return false;
+
+        Label label = getConcept().getLabel(getArc().getPreferredLabel());
+        if (label != null)
+            return label.isTotal();
+
+        return false;
+    }
+
+    void walk(PresentationNetworkConsumer consumer, Deque<PresentationGraphNode> path) {
+        for (GraphNode<PresentationArc> graphNode : this.getOutLinks()) {
+            PresentationGraphNode node = (PresentationGraphNode)graphNode;
+            consumer.nodeStart(node, path);
+            if (node.hasChildren()) {
+                path.push(node);
+                node.walk(consumer, path);
+                path.pop();
+            }
+            consumer.nodeEnd(node, path);
+        }
+    }
+
+    public void walk(PresentationNetworkConsumer consumer) {
+        Deque<PresentationGraphNode> path = new ArrayDeque<>();
+        path.push(this);
+        walk(consumer, path);
     }
 }

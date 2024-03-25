@@ -15,17 +15,22 @@
  */
 package io.datanapis.xbrl.analysis;
 
-import io.datanapis.xbrl.model.Axis;
 import io.datanapis.xbrl.model.arc.DefinitionArc;
 
-import java.util.Collection;
+import java.util.List;
 
-public class DefinitionHypercube extends Hypercube<DefinitionArc,DefinitionGraphNode> {
-    DefinitionHypercube(DefinitionGraphNode root, LineItems<DefinitionArc, DefinitionGraphNode> lineItems) {
-        super(root, lineItems);
+public class DefinitionHypercube extends Hypercube<DefinitionArc, DefinitionGraphNode, DefinitionHypercube.DefinitionAxis> {
+    DefinitionHypercube(DefinitionGraphNode table, LineItems<DefinitionArc, DefinitionGraphNode> lineItems) {
+        super(table, lineItems);
     }
 
-    DefinitionHypercube(DefinitionGraphNode root, Collection<Axis> axes, LineItems<DefinitionArc, DefinitionGraphNode> lineItems) {
-        super(root, axes, lineItems);
+    DefinitionHypercube(DefinitionGraphNode table, List<DefinitionAxis> axes, LineItems<DefinitionArc, DefinitionGraphNode> lineItems) {
+        super(table, axes, lineItems);
+    }
+
+    static class DefinitionAxis extends HypercubeAxis<DefinitionArc,DefinitionGraphNode> {
+        DefinitionAxis(DefinitionGraphNode dimension) {
+            super(dimension);
+        }
     }
 }

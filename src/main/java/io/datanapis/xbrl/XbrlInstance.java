@@ -15,6 +15,7 @@
  */
 package io.datanapis.xbrl;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import io.datanapis.xbrl.model.*;
 import io.datanapis.xbrl.model.arc.FootnoteArc;
@@ -121,6 +122,14 @@ public class XbrlInstance {
         return dei;
     }
 
+    public LocalDate getPeriodEndDate() {
+        return dei.getEstimatedPeriodEndDate();
+    }
+
+    public String getFiscalPeriod() {
+        return dei.getFiscalPeriod();
+    }
+
     public Collection<Fact> getAllFacts() {
         return facts.values();
     }
@@ -134,6 +143,24 @@ public class XbrlInstance {
     }
     public void setDefaultCurrency(Unit currency) {
         defaultCurrency = currency;
+    }
+
+    public String getInstancePrefix() {
+        Collection<Namespace> namespaces = factNamespaces.map().keySet();
+        String prefix = null;
+        for (Namespace namespace : namespaces) {
+            String uri = namespace.getURI();
+            if (uri.contains("sec.gov") || uri.contains("fasb.org") || uri.contains("xbrl.org"))
+                continue;
+
+            if (Objects.isNull(prefix)) {
+                prefix = namespace.getPrefix();
+            } else {
+                log.info("Prefix has already been set to [{}]. Ignoring alternate prefix [{}]", prefix, namespace.getPrefix());
+            }
+        }
+
+        return prefix;
     }
 
     public Collection<Concept> getScenarioConcepts() {
@@ -175,7 +202,7 @@ public class XbrlInstance {
      * @param matchingFacts the TimeOrdered<> collector into which matching facts are added
      * @param concept the concept to be matched
      */
-    public void getMatchingFacts(Concept concept, TimeOrdered<DimensionedFact> matchingFacts) {
+    private void getMatchingFacts(Concept concept, TimeOrdered<DimensionedFact> matchingFacts) {
         Collection<Fact> factCollection = conceptFacts.getFactsFor(concept);
         if (factCollection == null)
             return;
@@ -205,49 +232,54 @@ public class XbrlInstance {
      * ordered by presentation.
      */
     private static List<ExplicitMember> isMatchingContext(Collection<Axis> axes, Context context) {
+        /*
+         * Rules for filtering out contexts from Edgar Volume 2, Chapter 6 - Section 6.24.2 Context Selection
+         *
+         * 1. If a context segment has an axis with a member for which the axis does not have that member as a descendant in the
+         *    presentation group does not appear in the base set, then the context will not be selected (it will be filtered out).
+         * 2. If the presentation contains an axis that does not have its default member as a descendant, and the context segment
+         *    has no member for that axis, then the context will not be selected.
+         */
         Set<ExplicitMember> dimensions = context.getDimensions();
 
         /* Check if context matches the axes definition i.e., context dimensions are a subset of axes dimensions */
-        Set<Concept> contextConcepts = dimensions.stream().map(ExplicitMember::getDimension).collect(Collectors.toSet());
-        Set<Concept> axesConcepts = axes.stream().map(Axis::getDimension).collect(Collectors.toSet());
-        contextConcepts.removeAll(axesConcepts);
-        if (contextConcepts.size() != 0)
+        Set<Concept> contextAxes = dimensions.stream().map(ExplicitMember::getDimension).collect(Collectors.toSet());
+        Set<Concept> networkAxes = axes.stream().map(Axis::getDimension).collect(Collectors.toSet());
+        contextAxes.removeAll(networkAxes);
+
+        /* Check if Context has more qualifiers than required by the network. This partly addresses rule 1 */
+        if (!contextAxes.isEmpty())
             return null;
 
-        /* Context is a proper subset */
-        List<Axis> available = new ArrayList<>(axes);
-        SortedMap<Integer,ExplicitMember> orderedMembers = new TreeMap<>();
-
-        outer:
-        for (ExplicitMember member : dimensions) {
-
-            /*
-             * Check if 'member' belongs to any of the axis in available. If it is,
-             * remove it before checking for the next member.
-             */
-            for (int i = 0; i < available.size(); i++) {
-                Axis axis = available.get(i);
-                if (!axis.getDimension().equals(member.getDimension()))
-                    continue;
-
-                /*
-                 * Doing the simple thing here and selecting the first match. Hopefully, the combination of
-                 * (dimension, member) is unique enough that we don't need an exhaustive search.
-                 */
-                if (axis.contains(member)) {
-                    available.remove(i);
-                    orderedMembers.put(i, member);
-                    continue outer;
+        List<ExplicitMember> result = new ArrayList<>();
+        for (Axis axis : axes) {
+            ExplicitMember contextMember = null;
+            for (ExplicitMember member : dimensions) {
+                if (member.getDimension().equals(axis.getDimension())) {
+                    contextMember = member;
+                    break;
                 }
             }
 
-            /* at least one 'member' does not belong to any of the axis. Not a valid context */
-            return null;
+            if (contextMember != null) {
+                /* Validate rule 2. */
+                if (!axis.hasDefaultDomain()) {
+                    result.add(contextMember);
+                    continue;
+                } else if (axis.hasMember(contextMember.getMember())) {
+                    result.add(contextMember);
+                    continue;
+                } else if (axis.hasMemberAsDomain(contextMember.getMember())) {
+                    /* Some instances, incorrectly classify a member as a domain, e.g. American Electric Power's subsidiary, AEP Texas Inc, 2020 Q3 */
+                    result.add(contextMember);
+                    continue;
+                }
+                /* Rule 2 does not hold */
+                return null;
+            }
         }
 
-        /* all members belong to some axis. this is a valid combination */
-        List<ExplicitMember> presentationMembers = new ArrayList<>(orderedMembers.values());
-        return presentationMembers;
+        return result;
     }
 
     /**
@@ -260,8 +292,8 @@ public class XbrlInstance {
      * @param axes the hypercube axes to match
      * @param matchingFacts data structure where the matching facts are collected
      */
-    public void getFactsForConcept(Concept concept, Collection<Axis> axes, TimeOrdered<DimensionedFact> matchingFacts) {
-        if (axes == null || axes.size() == 0) {
+    public void getFactsFor(Concept concept, Collection<Axis> axes, TimeOrdered<DimensionedFact> matchingFacts) {
+        if (axes == null || axes.isEmpty()) {
             /* We are looking for simple facts */
             getMatchingFacts(concept, matchingFacts);
             return;
@@ -339,6 +371,8 @@ public class XbrlInstance {
         return result;
     }
 
+    private final int DAYS_ALLOWANCE = 10;
+
     /**
      * Get all contexts that belong to the Most Recent Quarter (MRQ). An MRQ is defined as the
      * roughly 3-month period that ends at the period end date. The period end date is defined
@@ -349,21 +383,18 @@ public class XbrlInstance {
      * @return Collection of contexts that belong to the Most Recent Quarter.
      */
     public Collection<Context> getMRQContexts() {
-        LocalDate periodEndDate = dei.getPeriodEndDate();
+        LocalDate periodEndDate = dei.getEstimatedPeriodEndDate();
         List<Context> contextList = new ArrayList<>();
         for (Context context : contextMap.values()) {
             Period period = context.getPeriod();
-            if (period instanceof Instant) {
-                Instant instant = (Instant)period;
-
+            if (period instanceof Instant instant) {
                 /* An instant can end upto 3 days after the period end date */
                 long days = Math.abs(ChronoUnit.DAYS.between(instant.getDate(), periodEndDate));
                 if (days > 3)
                     continue;
 
                 contextList.add(context);
-            } else if (period instanceof Duration) {
-                Duration duration = (Duration)period;
+            } else if (period instanceof Duration duration) {
                 long days = Math.abs(ChronoUnit.DAYS.between(duration.getEndDate(), periodEndDate));
                 if (days > 3)
                     continue;
@@ -371,12 +402,13 @@ public class XbrlInstance {
                 /* The logic below can potentially be simplified, but it requires extensive testing */
                 days = duration.durationInDays();
                 if (dei.getDocumentInformation().isQuarterlyReport()) {
-                    if (days < 80 || days > 99)
+                    if (Math.abs(days - 90) >= DAYS_ALLOWANCE)
                         continue;
                 } else if (dei.getDocumentInformation().isAnnualReport()) {
-                    if (days >= 360) {
+                    if (Math.abs(days - 365) >= DAYS_ALLOWANCE) {
                         continue;
-                    } else if (days < 80 || days > 99) {
+                    } else if (Math.abs(days - 90) >= DAYS_ALLOWANCE) {
+                        /* Annual reports could have quarterly information i.e., Q4 which needs to be considered */
                         continue;
                     }
                 }
@@ -395,44 +427,51 @@ public class XbrlInstance {
      * @return Collection of contexts that belong to the current fiscal year starting from the beginning.
      */
     public Collection<Context> getYTDContexts() {
-        LocalDate periodEndDate = dei.getPeriodEndDate();
+        LocalDate periodEndDate = dei.getEstimatedPeriodEndDate();
+        String fiscalPeriod = Dei.guessFiscalPeriod(dei, periodEndDate);
+        if (Objects.isNull(fiscalPeriod)) {
+            /* Default to fiscalPeriod in DEI, if the guess is null */
+            fiscalPeriod = dei.getFiscalPeriod();
+        } else if (!fiscalPeriod.equals(dei.getFiscalPeriod())) {
+            /* Guessed value does not match value in DEI. We are going to trust the guessed value, since the value in the DEI could be incorrect */
+            log.info("Guessed fiscal period [{}] does not match DEI fiscal period [{}]", fiscalPeriod, dei.getFiscalPeriod());
+        }
+
         List<Context> contextList = new ArrayList<>();
         for (Context context : contextMap.values()) {
             Period period = context.getPeriod();
-            if (period instanceof Instant) {
-                Instant instant = (Instant)period;
+            if (period instanceof Instant instant) {
                 long days = Math.abs(ChronoUnit.DAYS.between(instant.getDate(), periodEndDate));
                 if (days > 3)
                     continue;
 
                 contextList.add(context);
-            } else if (period instanceof Duration) {
-                Duration duration = (Duration)period;
+            } else if (period instanceof Duration duration) {
                 long days = Math.abs(ChronoUnit.DAYS.between(duration.getEndDate(), periodEndDate));
                 if (days > 3)
                     continue;
 
                 days = duration.durationInDays();
-                switch (dei.getDocumentInformation().getFiscalPeriod()) {
-                    case "Q1":
+                switch (fiscalPeriod) {
+                    case "Q1" -> {
                         /* For Q1, YTD is approximately 90 days */
-                        if (days < 80 || days > 99)
+                        if (Math.abs(days - 90) >= DAYS_ALLOWANCE)
                             continue;
-                        break;
-                    case "Q2":
+                    }
+                    case "Q2" -> {
                         /* For Q2, YTD is approximately 180 days */
-                        if (days < 170 || days > 190)
+                        if (Math.abs(days - 180) >= DAYS_ALLOWANCE)
                             continue;
-                        break;
-                    case "Q3":
+                    }
+                    case "Q3" -> {
                         /* For Q3, YTD is approximately 270 days */
-                        if (days < 260 || days > 280)
+                        if (Math.abs(days - 270) >= DAYS_ALLOWANCE)
                             continue;
-                        break;
-                    default:
-                        if (days < 360 || days > 370)
+                    }
+                    default -> {
+                        if (Math.abs(days - 365) >= DAYS_ALLOWANCE)
                             continue;
-                        break;
+                    }
                 }
 
                 contextList.add(context);
@@ -441,7 +480,7 @@ public class XbrlInstance {
         return contextList;
     }
 
-    public TimeOrdered<Fact> getFactsForConcept() {
+    public TimeOrdered<Fact> getFactsFor() {
         TimeOrdered<Fact> facts = new TimeOrdered<>();
         for (Fact fact : this.facts.values()) {
             facts.add(fact.getContext().getPeriod(), fact);
@@ -471,8 +510,12 @@ public class XbrlInstance {
             String name = element.getName();
             switch (name) {
                 case TagNames.SCHEMA_REF_TAG:
-                    assert dts == null : "DTS is not null!";
-                    dts = DiscoverableTaxonomySet.fromElement(resolver, element);
+                    // In older XBRLs around 2012, an instance may have multiple schemaRef statements corresponding to
+                    // the standard taxonomies such as us-gaap and dei. This is in addition to the import statements
+                    // in the primary XSD. We are making an assumption that the first schemaRef is the one that will
+                    // contain the XBRL instance.
+                    if (dts == null)
+                        dts = DiscoverableTaxonomySet.fromElement(resolver, element);
                     break;
                 case Context.CONTEXT_TAG:
                     Context context = Context.fromElement(dts, element);
@@ -537,11 +580,74 @@ public class XbrlInstance {
 
     /* Set dei values from facts */
     private void setDeiValues() {
+        /*
+         * Count occurrences of dates across the different contexts. We are going to use this information to "guess"
+         * the end date of an XbrlInstance. Although the DEI is supposed to have the periodEndDate, it is sometimes
+         * incorrect. By using the value in the instance, we hope to reduce errors
+         */
+        Counter<LocalDate> dateCounter = new Counter<>();
+        for (Context context : contextMap.values()) {
+            Period period = context.getPeriod();
+            if (period instanceof Instant instant) {
+                dateCounter.add(instant.getDate());
+            } else if (period instanceof Duration duration) {
+                dateCounter.add(duration.getEndDate());
+            }
+        }
+
+        /* Identify the most frequently occurring end dates in this instance */
+        List<Map.Entry<LocalDate,Integer>> entries = dateCounter.getEntries();
+        entries.sort((l, r) -> {
+            /* Sort by count descending and by date descending */
+            int result = Integer.compare(r.getValue(), l.getValue());
+            if (result != 0)
+                return result;
+
+            return r.getKey().compareTo(l.getKey());
+        });
+        if (!entries.isEmpty()) {
+            log.info("Context date counts: [{}]", Joiner.on("; ").join(entries));
+        }
+
+        /* Set DEI values from XBRL facts. This will set the different values including the periodEndDate */
         for (Fact fact : facts.values()) {
             Concept concept = fact.getConcept();
             if (XbrlUtils.isDei(concept.getNamespace().getURI())) {
+                if (log.isDebugEnabled())
+                    log.debug("Setting DEI [{}] -> [{}]", fact.getConcept().getQualifiedName(), fact.getValue());
                 dei.setPropertiesFrom(this, fact);
             }
+        }
+
+        /*
+         * Validate periodEndDate in the DEI
+         */
+        LocalDate periodEndDate = dei.getPeriodEndDate();
+        int i = -1;
+        for (int j = 0; j < entries.size(); j++) {
+            LocalDate key = entries.get(j).getKey();
+            if (key.equals(periodEndDate)) {
+                i = j;
+            }
+        }
+        if (i >= 3) {
+            /*
+             * periodEndDate in the DEI is not within the top 3 most frequently occurring end dates. We are going to set
+             * the most frequently occurring date as the periodEndDate. Would it be better to just ignore this XBRL altogether?
+             */
+            LocalDate estimatedEndDate = entries.get(0).getKey();
+            dei.setEstimatedPeriodEndDate(estimatedEndDate);
+            log.info("Mismatch: Estimated end date [{}] is different from period end date in DEI [{}]", estimatedEndDate, periodEndDate);
+            /* Check if the dateFiled in the DEI is consistent with the periodEndDate we estimated */
+            if (Objects.nonNull(dei.getDateFiled()) && estimatedEndDate.isAfter(dei.getDateFiled())) {
+                log.info("Inconsistent: Estimated end date [{}] is after date filed [{}]", estimatedEndDate, dei.getDateFiled());
+            }
+        } else {
+            if (i == -1) {
+                /* This means, the periodEndDate in the DEI does not even occur as the end date in any of the contexts */
+                log.info("periodEndDate [{}] in DEI does not occur in any context!", periodEndDate);
+            }
+            dei.setEstimatedPeriodEndDate(periodEndDate);
         }
     }
 
@@ -870,7 +976,7 @@ public class XbrlInstance {
                         // a nonFraction element may sometimes contain another nonFraction element. In this case
                         // the value of the top level nonFraction element is the same as the child nonFraction element
                         List<Element> childElements = element.elements().stream()
-                                .filter(e -> TagNames.NON_FRACTION_TAG.equals(e.getName())).collect(Collectors.toList());
+                                .filter(e -> TagNames.NON_FRACTION_TAG.equals(e.getName())).toList();
                         if (childElements.size() > 0) {
                             if (childElements.size() > 1) {
                                 log.info("More than one nonFraction child!");
@@ -938,6 +1044,12 @@ public class XbrlInstance {
 
         private void linkRelationships() {
             log.info("Found {} relationships", relationships.size());
+            // Some XBRLs have too many footnotes, practically one for each fact and almost all of them are the same.
+            // Not sure, how useful this really is. Ideally, it will be good to preserve this. However, the current
+            // implementation of json serialization is memory intensive. Until, we can make that more efficient we
+            // are going to ignore footnotes, when there are too many of them. TODO - Revisit this
+            boolean tooManyRelationships = relationships.size() > 999;
+            Counter<String> roleCounter = new Counter<>();
             for (Relationship relationship : relationships) {
                 Fact fact = facts.get(relationship.getFrom());
                 if (fact == null) {
@@ -945,13 +1057,20 @@ public class XbrlInstance {
                     continue;
                 }
 
-                if (XbrlUtils.isFactFootnote(relationship.getArcrole())) {
+                if (!tooManyRelationships && XbrlUtils.isFactFootnote(relationship.getArcrole())) {
                     Element element = footnotes.get(relationship.getTo());
                     NodeChain nc = getChain(element);
                     Footnote footnote = Footnote.fromElements(resolver.getRootPath(), nc.getChain());
                     fact.setFootnote(footnote);
-                } else {
+                } else if (!tooManyRelationships) {
                     log.info("Ignoring relationship [{}]", relationship.getArcrole());
+                } else {
+                    roleCounter.add(relationship.getArcrole());
+                }
+            }
+            if (tooManyRelationships) {
+                for (var entry : roleCounter.getEntriesSorted()) {
+                    log.info("Ignored [{}] relationships of [{}]", entry.getValue(), entry.getKey());
                 }
             }
         }

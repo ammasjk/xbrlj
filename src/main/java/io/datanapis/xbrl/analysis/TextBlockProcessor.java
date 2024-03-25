@@ -15,23 +15,49 @@
  */
 package io.datanapis.xbrl.analysis;
 
+import io.datanapis.xbrl.analysis.text.FormattingVisitor;
+import io.datanapis.xbrl.analysis.text.NameValue;
+import io.datanapis.xbrl.analysis.text.TextUtils;
 import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
+import org.jsoup.nodes.*;
 import org.jsoup.select.Elements;
+import org.jsoup.select.NodeTraversor;
+import org.jsoup.select.NodeVisitor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 public class TextBlockProcessor {
+    private static final Logger log = LoggerFactory.getLogger(TextBlockProcessor.class);
+
     private final Document document;
-    private final boolean skipTables;
+    private final Elements tables;
 
     public interface TableProcessor {
-        void tableStart(int current, int nTables);
-        void tableEnd(int current, int nTables);
+        default boolean process(String outerHtml) {
+            return true;
+        }
 
-        void rowStart(int current, int nRows);
-        void rowEnd(int current, int nRows);
+        default void tableStart(int current, int nTables) {
+        }
+        default void tableEnd(int current, int nTables) {
+        }
 
-        void column(int current, int nCols, String value);
+        default void rowStart(int current, int nRows) {
+        }
+        default void rowEnd(int current, int nRows) {
+        }
+
+        default void column(int start, int colspan, int nCols, List<NameValue> styles, String value) {
+            column(start, colspan, nCols, value);
+        }
+
+        default void column(int start, int colspan, int nCols, String value) {
+        }
     }
 
     public TextBlockProcessor(String html) {
@@ -40,23 +66,38 @@ public class TextBlockProcessor {
 
     public TextBlockProcessor(String html, boolean skipTables) {
         document = Jsoup.parse(html);
-        this.skipTables = skipTables;
+        if (skipTables) {
+            tables = document.select("table").clone();
+            document.select("table").remove();
+        } else {
+            tables = document.select("table");
+        }
     }
 
     public String getParagraphs() {
         Elements paragraphs;
-        if (skipTables) {
-            /* We should be skipping tables, but this is not working well. Leaving it as is for now */
-            paragraphs = document.select("body,p,span,div");
-        } else {
-            paragraphs = document.select("body,p,span,div");
-        }
-        return paragraphs.text();
+        paragraphs = document.select("body");
+        return toText(paragraphs);
+    }
+
+    private static String compactHtml(String html) {
+        return html.replaceAll("\n", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    public String getHtml() {
+        return compactHtml(document.outerHtml());
     }
 
     public String getTablesAsHTML() {
-        Elements table = document.select("table");
-        return table.outerHtml();
+        return compactHtml(tables.outerHtml());
+    }
+
+    public void getTables(Consumer<String> htmlConsumer) {
+        for (Element table : this.tables) {
+            htmlConsumer.accept(compactHtml(table.outerHtml()));
+        }
     }
 
     public String getTables() {
@@ -65,9 +106,14 @@ public class TextBlockProcessor {
     }
 
     public String getTables(TableProcessor tableProcessor) {
-        Elements tables = document.select("table");
+        Elements tables = this.tables;
         for (int i = 0; i < tables.size(); i++) {
             Element table = tables.get(i);
+            String html = compactHtml(table.outerHtml());
+            boolean ok = tableProcessor.process(html);
+            if (!ok)
+                continue;
+
             tableProcessor.tableStart(i, tables.size());
 
             Elements rows = table.select("tr");
@@ -78,7 +124,16 @@ public class TextBlockProcessor {
                 Elements cols = row.select("th,td");
                 for (int c = 0; c < cols.size(); c++) {
                     Element col = cols.get(c);
-                    tableProcessor.column(c, cols.size(), col.text());
+                    List<NameValue> styles = new ArrayList<>();
+                    col.traverse((node, depth) -> {
+                        if (node instanceof Element element) {
+                            String style = TextUtils.style(element);
+                            if (Objects.nonNull(style)) {
+                                styles.add(new NameValue(node.nodeName(), style));
+                            }
+                        }
+                    });
+                    tableProcessor.column(c, TextUtils.colspan(col), cols.size(), styles, col.text());
                 }
 
                 tableProcessor.rowEnd(r, rows.size());
@@ -115,11 +170,21 @@ public class TextBlockProcessor {
         }
 
         @Override
-        public void column(int current, int nCols, String value) {
-            if (current == 0) {
-                builder.append(String.format("%-30.30s%s", value, (current < nCols - 1) ? "|" : ""));
+        public void column(int start, int colspan, int nCols, String value) {
+            int width;
+            String format;
+            if (start == 0) {
+                width = 20 + 15 * colspan;
+                if (start + colspan < nCols)
+                    --width;
+                format = String.format("%%-%d.%ds%%s", width, width);
+                builder.append(String.format(format, value, (start + colspan < nCols) ? "|" : ""));
             } else {
-                builder.append(String.format("%15.15s%s", value, (current < nCols - 1) ? "|" : ""));
+                width = 15 * colspan;
+                if (start + colspan < nCols)
+                    --width;
+                format = String.format("%%%d.%ds%%s", width, width);
+                builder.append(String.format(format, value, (start + colspan < nCols) ? "|" : ""));
             }
         }
 
@@ -127,5 +192,14 @@ public class TextBlockProcessor {
         public String toString() {
             return builder.toString();
         }
+    }
+
+    private static String toText(Elements elements) {
+        StringBuilder builder = new StringBuilder();
+        FormattingVisitor formatter = new FormattingVisitor(builder);
+        for (Element element : elements) {
+            NodeTraversor.traverse(formatter, element);
+        }
+        return builder.toString();
     }
 }

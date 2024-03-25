@@ -15,13 +15,17 @@
  */
 package io.datanapis.test;
 
+import io.datanapis.xbrl.analysis.TextBlockProcessor;
+import io.datanapis.xbrl.analysis.text.Padding;
+import io.datanapis.xbrl.analysis.text.TextUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import java.io.File;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
@@ -139,6 +143,111 @@ public class JsoupPlayground {
         System.out.println("Arcroles:");
         for (Map.Entry<String,UriDefinitionPair> entry : arcroles.entrySet()) {
             System.out.printf("[%s] = {%s, %s}\n", entry.getKey(), entry.getValue().uri, entry.getValue().definition);
+        }
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void removeTables() throws Exception {
+        try (InputStream inputStream = JsoupPlayground.class.getResourceAsStream("/test.html");
+             InputStreamReader reader = new InputStreamReader(inputStream);
+             BufferedReader bufferedReader = new BufferedReader(reader)) {
+
+            StringBuilder builder = new StringBuilder();
+            bufferedReader.lines().forEach(builder::append);
+            String html = builder.toString();
+            TextBlockProcessor processor = new TextBlockProcessor(html);
+            String value = processor.getTables();
+            System.out.println(processor.getParagraphs());
+            System.out.println("\nTable:");
+            System.out.println(value);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void extractText() throws Exception {
+        try (InputStream inputStream = JsoupPlayground.class.getResourceAsStream("/paragraphs.html");
+             InputStreamReader reader = new InputStreamReader(inputStream);
+             BufferedReader bufferedReader = new BufferedReader(reader)) {
+
+            StringBuilder builder = new StringBuilder();
+            bufferedReader.lines().forEach(builder::append);
+            String html = builder.toString();
+            TextBlockProcessor textBlockProcessor = new TextBlockProcessor(html);
+            System.out.println(textBlockProcessor.getParagraphs());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static String[] STYLES = new String[] {
+            "\"padding:2px 1pt 2px 25.75pt;text-align:left;vertical-align:bottom\"",
+            "\"padding:2px 1pt;text-align:left;vertical-align:bottom\"",
+            "\"padding:2px 0 2px 1pt;text-align:right;vertical-align:bottom\"",
+            "\"padding-left:11.25pt\"",
+            "background-color:#d0e5f8;border-bottom:1pt solid #000000;border-left:1pt solid #000000;border-top:1pt solid #000000;padding:2px 1pt;text-align:center;vertical-align:bottom",
+            "\"color:#000000;font-family:'Amplitude',sans-serif;font-size:6pt;font-weight:400;line-height:100%\"",
+            "\"color:#000000;font-family:'Amplitude',sans-serif;font-size:6pt;font-weight:700;line-height:100%\"",
+            "\"padding:2px 0 2px 1pt;text-align:right;vertical-align:bottom\"",
+            "background-color:#d0e5f8;border-bottom:1pt solid #000000;border-left:1pt solid #000000;border-top:1pt solid #000000;padding:2px 1pt;text-align:center;vertical-align:bottom",
+            "padding-left:29.25pt;text-indent:-4.5pt"
+    };
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void testPadding() throws Exception {
+        for (String style : STYLES) {
+            Padding padding = TextUtils.getPadding(style);
+            System.out.print(style);
+            System.out.print(" ==> ");
+            System.out.println(padding);
+        }
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void testFontWeight() throws Exception {
+        for (String style : STYLES) {
+            Integer fontWeight = TextUtils.getFontWeight(style);
+            System.out.print(style);
+            System.out.print(" ==> ");
+            System.out.println(fontWeight);
+        }
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void testBackgroundColor() throws Exception {
+        for (String style : STYLES) {
+            String bgColor = TextUtils.getBackgroundColor(style);
+            System.out.print(style);
+            System.out.print(" ==> ");
+            System.out.println(bgColor);
+        }
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void testTextAlign() throws Exception {
+        for (String style : STYLES) {
+            String bgColor = TextUtils.getTextAlign(style);
+            System.out.print(style);
+            System.out.print(" ==> ");
+            System.out.println(bgColor);
+        }
+    }
+
+    @Test
+    @Category(io.datanapis.test.SlowTest.class)
+    public void testTextIndent() throws Exception {
+        for (String style : STYLES) {
+            Float indent = TextUtils.getTextIndent(style);
+            System.out.print(style);
+            System.out.print(" ==> ");
+            System.out.println(indent);
         }
     }
 }

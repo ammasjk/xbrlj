@@ -63,12 +63,12 @@ public final class Duration implements Period {
          * 2) |-----------| (rhs)
          *                         |-----------| (lhs)      Result: 1 i.e. rhs is before lhs
          *
-         * 3) |-----------| (rhs)
-         *         |-----------| (lhs)                      Result: 1 since rhs starts before lhs
+         * 3) |-----------| (lhs)
+         *         |-----------| (rhs)                      Result: -1 since lhs starts before rhs
          *    We are treating the semantics where lhs is completely within rhs as the same as this.
          *
-         * 4) |-----------| (lhs)
-         *         |-----------| (rhs)                      Result: -1 since lhs starts before rhs
+         * 4) |-----------| (rhs)
+         *         |-----------| (lhs)                      Result: 1 since rhs starts before lhs
          *    We are treating the semantics where rhs is completely within lhs as the same as this.
          *
          * 5) If none of the above match, then the scenario is one of the following
@@ -81,15 +81,20 @@ public final class Duration implements Period {
          */
         Duration lhs = this;
         if (lhs.endDate.isBefore(rhs.startDate)) {
+            /* Clearly lhs.start has to be earlier than rhs.start as well */
             return -1;
-        } else if (rhs.endDate.isBefore(lhs.startDate)) {
+        }
+        if (rhs.endDate.isBefore(lhs.startDate)) {
+            /* Again, rhs.start has to be earlier than lhs.start */
             return 1;
-        } else if (between(lhs.startDate, rhs.startDate, rhs.endDate)) {
-            /* We are not comparing end dates here. Assuming the semantics are consistent with this. */
-            return 1;
-        } else if (between(rhs.startDate, lhs.startDate, lhs.endDate)) {
-            /* We are not comparing end dates here. Assuming, the semantics are consistent with this. */
+        }
+        if (lhs.startDate.isBefore(rhs.startDate)) {
+            /* lhs starts before rhs */
             return -1;
+        }
+        if (lhs.startDate.isAfter(rhs.startDate)) {
+            /* lhs starts after rhs */
+            return 1;
         }
 
         assert lhs.startDate.equals(rhs.startDate);

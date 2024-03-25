@@ -15,24 +15,82 @@
  */
 package io.datanapis.xbrl.model;
 
-import java.util.HashSet;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Axis represents a set of members along one dimension
  */
-public class Axis extends HashSet<ExplicitMember> {
+@Getter
+public class Axis  {
     private final Concept dimension;
+    private final List<Concept> domains;
+    @Setter
+    private Concept defaultDomain;
+    private final LinkedHashSet<Concept> members;
 
     public Axis(Concept dimension) {
         this.dimension = dimension;
+        this.domains = new ArrayList<>();
+        this.members = new LinkedHashSet<>();
     }
 
-    public Concept getDimension() {
-        return dimension;
+    public boolean hasDefaultDomain() {
+        return defaultDomain != null;
+    }
+
+    public void addDomain(Concept domain) {
+        this.domains.add(domain);
     }
 
     public void addMember(Concept member) {
-        ExplicitMember explicitMember = new ExplicitMember(dimension, member);
-        this.add(explicitMember);
+        members.add(member);
+    }
+
+    public boolean hasMember(Concept member) {
+        return members.contains(member);
+    }
+
+    public boolean hasMemberAsDomain(Concept member) {
+        /* Some instances incorrectly classify a member as a domain */
+        long count = domains.stream().filter(concept -> concept.equals(member)).count();
+        return count > 0;
+    }
+
+    public Set<Concept> getMembers() {
+        return members;
+    }
+
+    public Set<ExplicitMember> getExplicitMembers() {
+        Set<ExplicitMember> explicitMembers = new LinkedHashSet<>();
+        for (Concept member : members) {
+            explicitMembers.add(new ExplicitMember(dimension, member));
+        }
+        return explicitMembers;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder();
+        builder.append(dimension.getQualifiedName());
+        if (defaultDomain != null) {
+            builder.append("[").append(defaultDomain.getQualifiedName()).append("]");
+        }
+        builder.append("(");
+        boolean first = true;
+        for (Concept member : members) {
+            if (!first) {
+                builder.append(", ");
+            }
+            builder.append(member.getQualifiedName());
+            first = false;
+        }
+        builder.append(")");
+        return builder.toString();
     }
 }

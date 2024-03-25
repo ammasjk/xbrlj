@@ -140,7 +140,7 @@ public final class Unit {
         } else if (type == Type.MEASURE) {
             StringBuilder builder = new StringBuilder();
             for (Measure measure : measures) {
-                if (builder.length() > 0) {
+                if (!builder.isEmpty()) {
                     builder.append(", ");
                 }
                 builder.append(measure.toString());

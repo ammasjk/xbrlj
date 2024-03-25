@@ -167,8 +167,7 @@ public final class Context {
      */
     public boolean isRelevantTo(LocalDate periodEndDate) {
         Period period = this.getPeriod();
-        if (period instanceof Instant) {
-            Instant instant = (Instant)period;
+        if (period instanceof Instant instant) {
             return instant.getDate().equals(periodEndDate);
         } else {
             assert (period instanceof Duration);
@@ -212,11 +211,11 @@ public final class Context {
         final int limit = 15;
         String contextId;
         if (id.length() > limit) {
-            contextId = id.substring(0, limit - 3) + "...";
+            contextId = id.substring(0, (limit - 3) >> 1) + "..." + id.substring(id.length() - ((limit - 3) >> 1));
         } else {
             contextId = id;
         }
-        return String.format("Context(%s, %s, %s)", contextId, entity.toString(), period.toString());
+        return String.format("Context(%s, %s, %s)", contextId, period, entity);
     }
 
     public static Context fromElement(DiscoverableTaxonomySet dts, Element element) {

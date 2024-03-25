@@ -15,8 +15,10 @@
  */
 package io.datanapis.xbrl;
 
+import com.ctc.wstx.sax.WstxSAXParser;
 import io.datanapis.xbrl.reader.ContentCache;
 import io.datanapis.xbrl.reader.SimpleContentCache;
+import io.datanapis.xbrl.utils.TaxonomyUtils;
 import okhttp3.*;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
@@ -24,6 +26,9 @@ import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xml.sax.SAXNotRecognizedException;
+import org.xml.sax.SAXNotSupportedException;
+import org.xml.sax.XMLReader;
 
 import java.io.*;
 import java.nio.file.FileSystem;
@@ -46,6 +51,11 @@ public class XbrlReader {
     private final static OkHttpClient client;
     static {
         USER_AGENT = System.getProperty("user.agent", "");
+        if (USER_AGENT.isEmpty()) {
+            log.error("user.agent is not defined");
+        } else {
+            log.info("HTTP Client - using [{}] as User-Agent", USER_AGENT);
+        }
         client = new OkHttpClient.Builder()
                 .cache(new Cache(cacheFolder, 1024 * 1024 * 1024))
                 .connectTimeout(5000, TimeUnit.MILLISECONDS)
@@ -53,7 +63,7 @@ public class XbrlReader {
                 .callTimeout(25000, TimeUnit.MILLISECONDS)
                 .addNetworkInterceptor(chain -> {
                     Request originalRequest = chain.request();
-                    log.info("URL: [{}]", originalRequest.url());
+                    log.debug("URL: [{}]", originalRequest.url());
                     Request requestWithUserAgent = originalRequest.newBuilder()
                             .header("User-Agent", USER_AGENT)
                             .build();
@@ -79,6 +89,22 @@ public class XbrlReader {
 
     public XbrlInstance getInstance(String url) throws Exception {
         return getInstance(null, url);
+    }
+
+    private static SAXReader saxReader() {
+        XMLReader reader = null;
+//        try {
+//            WstxSAXParser saxParser = new WstxSAXParser();
+//            reader = saxParser.getXMLReader();
+//            reader.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+//            reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+//            reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+//        } catch (SAXNotRecognizedException | SAXNotSupportedException e) {
+//            log.info("Exception: " + e);
+//            reader = null;
+//        }
+        SAXReader saxReader = new SAXReader(reader);
+        return saxReader;
     }
 
     /**
@@ -125,29 +151,33 @@ public class XbrlReader {
     }
 
     /**
-     * Returns the taxonomy rooted at path. Path can either be a local file or an HTTP url. This is useful for accessing
+     * Returns the taxonomy rooted at path. Path should be a local file. This is useful for analyzing
      * the base US GAAP taxonomy.
      *
-     * @param path Either a file or a HTTP url. Files should not start with file://. If it is not an HTTP url, it is assumed to be a file
+     * @param path a file - presumably the root of the taxonomy
      * @return a DiscoverableTaxonomyInstance
      * @throws Exception if there is an error accessing the data or parsing the taxonomy
      */
-    public DiscoverableTaxonomySet getTaxonomy(String path) throws Exception {
+    public DiscoverableTaxonomySet getTaxonomy(String path, boolean withCaching) throws Exception {
         log.info("Reading taxonomy from [{}]", path);
         FileSystem fs = FileSystems.getDefault();
         Path rootPath = fs.getPath(path).toAbsolutePath();
-        File file = rootPath.toFile();
-        if (!file.exists() || !file.isFile())
+        if (!Files.exists(rootPath) || !Files.isRegularFile(rootPath))
             throw new FileNotFoundException(path);
 
-        Resolver resolver = new ResolverImpl(client, rootPath.getParent());
+        ContentCache contentCache = null;
+        if (withCaching) {
+            Map<String,byte[]> contentMap = TaxonomyUtils.buildCacheFromRootXsd(rootPath, TaxonomyUtils::getGaapTaxonomyBasePath);
+            contentCache = new SimpleContentCache(contentMap);
+        }
+
+        Resolver resolver = new ResolverImpl(client, rootPath.getParent(), contentCache);
         return DiscoverableTaxonomySet.fromPath(resolver, rootPath.toString());
     }
 
     /**
      * Returns the XBRL instance from a Zip stream whose original url is zipUrl. The original url is important to
      * resolve documents referenced from it. Newer zip files contain an iXBRL instance rather than an XBRL instance.
-     * We can't parse an iXBRL instance yet but it doesn't look too difficult to parse.
      *
      * @param dateFiled An optional parameter indicating the date the XBRL instance was filed
      * @param zipUrl URL to the zip file
@@ -165,7 +195,7 @@ public class XbrlReader {
         if (rootPath.toString().endsWith(".zip")) {
             return fromZip(dateFiled, rootPath);
         } else {
-            SAXReader saxReader = new SAXReader();
+            SAXReader saxReader = XbrlReader.saxReader();
             Document document = saxReader.read(Files.newBufferedReader(rootPath));
             Element root = document.getRootElement();
             Resolver resolver = new ResolverImpl(client, rootPath.getParent());
@@ -174,7 +204,7 @@ public class XbrlReader {
     }
 
     private XbrlInstance fromInstanceXml(LocalDate dateFiled, HttpUrl httpUrl, Reader reader) throws Exception {
-        SAXReader saxReader = new SAXReader();
+        SAXReader saxReader = XbrlReader.saxReader();
         Document document = saxReader.read(reader);
         Element root = document.getRootElement();
         Resolver resolver = new ResolverImpl(client, httpUrl);
@@ -213,7 +243,7 @@ public class XbrlReader {
 
         /* iXBRL logic - return all HTML files, iXBRL instances can be split across multiple HTML files */
         candidates = contentMap.entrySet().stream().filter(e -> htmlFile.test(e.getKey())).collect(Collectors.toList());
-        if (candidates.size() == 0)
+        if (candidates.isEmpty())
             return null;
 
         return candidates;
@@ -261,7 +291,7 @@ public class XbrlReader {
 
             Element root = null;
             try (ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(instanceEntry.getValue())) {
-                SAXReader saxReader = new SAXReader();
+                SAXReader saxReader = XbrlReader.saxReader();
                 Document document = saxReader.read(byteArrayInputStream);
                 root = document.getRootElement();
             } catch (DocumentException e) {
@@ -283,17 +313,17 @@ public class XbrlReader {
             List<Element> roots = new ArrayList<>();
             for (Map.Entry<String,byte[]> instanceEntry : instanceEntries) {
                 try (ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(instanceEntry.getValue())) {
-                    SAXReader saxReader = new SAXReader();
+                    SAXReader saxReader = XbrlReader.saxReader();
                     Document document = saxReader.read(byteArrayInputStream);
                     Element root = document.getRootElement();
                     if (XbrlInstance.isInlineXBRL(root)) {
                         log.info("Adding [{}] as an iXBRL root for [{}]", instanceEntry.getKey(), sourcePath);
                         roots.add(root);
                     } else {
-                        log.debug("Skipping HTML file [{}] for [{}]. Not an iXBRL instance", instanceEntry.getKey(), sourcePath);
+                        log.info("Skipping HTML file [{}] for [{}]. Not an iXBRL instance", instanceEntry.getKey(), sourcePath);
                     }
                 } catch (DocumentException e) {
-                    log.debug("Skipping HTML file [{}] for [{}]. [{}]", instanceEntry.getKey(), sourcePath, e.toString());
+                    log.info("Skipping HTML file [{}] for [{}]. [{}]", instanceEntry.getKey(), sourcePath, e.toString());
                 }
             }
 
@@ -311,7 +341,7 @@ public class XbrlReader {
     }
 
     private XbrlInstance getInstance(LocalDate dateFiled, HttpUrl httpUrl) throws Exception {
-        Request request = new Request.Builder().url(httpUrl).build();
+        Request request = new Request.Builder().cacheControl(CacheControl.FORCE_NETWORK).url(httpUrl).build();
 
         try (Response response = client.newCall(request).execute(); ResponseBody responseBody = response.body()) {
             assert (responseBody != null);
@@ -338,7 +368,7 @@ public class XbrlReader {
     }
 
     private byte[] getContents(HttpUrl httpUrl) throws Exception {
-        Request request = new Request.Builder().url(httpUrl).build();
+        Request request = new Request.Builder().cacheControl(CacheControl.FORCE_NETWORK).url(httpUrl).build();
 
         try (Response response = client.newCall(request).execute(); ResponseBody responseBody = response.body()) {
             assert (responseBody != null);
@@ -552,6 +582,14 @@ public class XbrlReader {
                 assert (responseBody != null);
 
                 if (log.isDebugEnabled()) {
+                    int httpCode = response.code();
+                    MediaType contentType = responseBody.contentType();
+                    if (contentType != null) {
+                        log.debug("URL: [{}], Status Code: [{}] - [{}]/[{}]", httpUrl, httpCode, contentType.type(), contentType.subtype());
+                    } else {
+                        log.debug("URL: [{}], Status Code: [{}]", httpUrl, httpCode);
+                    }
+
                     if (response.networkResponse() != null) {
                         log.debug("Network hit [{}]. Response code: [{}]", httpUrl, response.code());
                     } else if (response.cacheResponse() != null) {
@@ -559,7 +597,7 @@ public class XbrlReader {
                     }
                 }
                 Reader reader = responseBody.charStream();
-                SAXReader saxReader = new SAXReader();
+                SAXReader saxReader = XbrlReader.saxReader();
                 Document document = saxReader.read(reader);
                 return document.getRootElement();
             } catch (Exception e) {
@@ -593,7 +631,7 @@ public class XbrlReader {
 
                 log.debug("Reading [{}] from [{}]", absolutePath, path);
                 try (BufferedReader reader = Files.newBufferedReader(path)) {
-                    SAXReader saxReader = new SAXReader();
+                    SAXReader saxReader = XbrlReader.saxReader();
                     Document document = saxReader.read(reader);
                     return document.getRootElement();
                 } catch (Exception e) {
@@ -604,7 +642,7 @@ public class XbrlReader {
 
         Element fromBytes(byte[] buffer) throws Exception {
             try (ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(buffer)) {
-                SAXReader saxReader = new SAXReader();
+                SAXReader saxReader = XbrlReader.saxReader();
                 Document document = saxReader.read(byteArrayInputStream);
                 return document.getRootElement();
             } catch (Exception e) {

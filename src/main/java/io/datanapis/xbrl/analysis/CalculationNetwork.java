@@ -54,31 +54,22 @@ public class CalculationNetwork extends CalculationTaxonomy {
         static int compare(Result lhs, Result rhs) {
             switch (lhs) {
                 case COMPLETE:
-                    switch (rhs) {
-                        case PARTIAL:
-                        case ROOT_LEVEL_COMPLETE:
-                            return 1;
-                        default:
-                            return 0;
-                    }
+                    return switch (rhs) {
+                        case PARTIAL, ROOT_LEVEL_COMPLETE -> 1;
+                        default -> 0;
+                    };
                 case PARTIAL:
-                    switch (rhs) {
-                        case COMPLETE:
-                        case ROOT_LEVEL_COMPLETE:
-                            return -1;
-                        default:
-                            return 0;
-                    }
+                    return switch (rhs) {
+                        case COMPLETE, ROOT_LEVEL_COMPLETE -> -1;
+                        default -> 0;
+                    };
                 default:
                     /* i.e. ROOT_LEVEL_COMPLETE: */
-                    switch (rhs) {
-                        case PARTIAL:
-                            return 1;
-                        case COMPLETE:
-                            return -1;
-                        default:
-                            return 0;
-                    }
+                    return switch (rhs) {
+                        case PARTIAL -> 1;
+                        case COMPLETE -> -1;
+                        default -> 0;
+                    };
             }
         }
     }
@@ -109,7 +100,7 @@ public class CalculationNetwork extends CalculationTaxonomy {
 
         Collection<CalculationGraphNode> graphNodes =
                 CalculationTaxonomy.getRootNodes(instance.getTaxonomy(), calculationLink);
-        if (graphNodes.size() == 0)
+        if (graphNodes.isEmpty())
             return;
 
         Collection<Context>contexts = instance.getAllContexts();
@@ -214,7 +205,7 @@ public class CalculationNetwork extends CalculationTaxonomy {
         }
         log.debug("{} validating [{}] = [{}] [{}]:\n",
                 prefix, parentConcept.getQualifiedName(), value, balance.toString());
-        if (parent.getOutLinks().size() == 0) {
+        if (parent.getOutLinks().isEmpty()) {
             processor.calculationNodeEnd(level, parent, Result.COMPLETE, value);
             return Result.COMPLETE;
         }

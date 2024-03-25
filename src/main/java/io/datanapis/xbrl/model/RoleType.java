@@ -19,6 +19,7 @@ import io.datanapis.xbrl.TagNames;
 import io.datanapis.xbrl.model.link.CalculationLink;
 import io.datanapis.xbrl.model.link.DefinitionLink;
 import io.datanapis.xbrl.model.link.PresentationLink;
+import io.datanapis.xbrl.model.link.ReferenceLink;
 import org.dom4j.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,7 @@ public final class RoleType {
     private static final String PREDEFINED = "predefined";
 
     public static final String DEPRECATED_URI = "http://fasb.org/us-gaap/role/deprecated/deprecated";
+    public static final String DISCLOSURE_URI = "http://www.xbrl.org/2003/role/disclosureRef";
     public static final String COMMON_PRACTICE_REF_URI = "http://www.xbrl.org/2009/role/commonPracticeRef";
     public static final String NON_AUTHORITATIVE_LITERATURE_REF_URI = "http://www.xbrl.org/2009/role/nonauthoritativeLiteratureRef";
     public static final String RECOGNITION_REF_URI = "http://www.xbrl.org/2009/role/recognitionRef";
@@ -35,6 +37,7 @@ public final class RoleType {
     private static final Logger log = LoggerFactory.getLogger(RoleType.class);
 
     public static final RoleType DEPRECATED = new RoleType(PREDEFINED, false);
+    public static final RoleType DISCLOSURE = new RoleType(PREDEFINED, false);
     public static final RoleType COMMON_PRACTICE_REF = new RoleType(PREDEFINED, false);
     public static final RoleType NON_AUTHORITATIVE_LITERATURE_REF = new RoleType(PREDEFINED, false);
     public static final RoleType RECOGNITION_REF = new RoleType(PREDEFINED, false);
@@ -42,6 +45,10 @@ public final class RoleType {
         DEPRECATED.id = "deprecated";
         DEPRECATED.roleURI = DEPRECATED_URI;
         DEPRECATED.definition = "Type consisting of all deprecated calculation, definition and presentation concepts";
+
+        DISCLOSURE.id = "disclosure";
+        DISCLOSURE.roleURI = DISCLOSURE_URI;
+        DISCLOSURE.definition = "Type for managing taxonomy information. Not currently stored in memory";
 
         COMMON_PRACTICE_REF.id = "common-practice-ref";
         COMMON_PRACTICE_REF.roleURI = COMMON_PRACTICE_REF_URI;
@@ -176,8 +183,21 @@ public final class RoleType {
         return roleType;
     }
 
+    public static void clear() {
+        DEPRECATED.reset();
+        COMMON_PRACTICE_REF.reset();
+        NON_AUTHORITATIVE_LITERATURE_REF.reset();
+        RECOGNITION_REF.reset();
+    }
+
     private RoleType(String sourceUrl, boolean reportable) {
         this.reportable = reportable;
         this.sourceUrl = sourceUrl;
+    }
+
+    private void reset() {
+        this.calculationLink = null;
+        this.presentationLink = null;
+        this.definitionLink = null;
     }
 }

@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 public abstract class FromArc implements Comparable<FromArc> {
@@ -79,6 +80,20 @@ public abstract class FromArc implements Comparable<FromArc> {
 
     public String getTitle() {
         return title;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        /* equals() only works within a network - don't compare Arc's across networks - it wouldn't make sense */
+        if (this == o) return true;
+        if (!(o instanceof FromArc fromArc)) return false;
+        return Float.compare(order, fromArc.order) == 0 && Objects.equals(arcrole, fromArc.arcrole);
+    }
+
+    @Override
+    public int hashCode() {
+        /* like equals(), hashCode() only works within a network */
+        return Objects.hash(order, arcrole);
     }
 
     @Override

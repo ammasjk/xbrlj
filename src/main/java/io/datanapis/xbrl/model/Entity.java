@@ -15,8 +15,10 @@
  */
 package io.datanapis.xbrl.model;
 
+import com.google.common.base.Joiner;
 import io.datanapis.xbrl.DiscoverableTaxonomySet;
 import io.datanapis.xbrl.TagNames;
+import io.datanapis.xbrl.XbrlNamespaces;
 import org.dom4j.Attribute;
 import org.dom4j.Element;
 import org.dom4j.QName;
@@ -127,16 +129,13 @@ public final class Entity {
         return typedMembers.size() > 0;
     }
 
-    private static final String SRT_PREFIX = "srt";
-    private static final String US_GAAP_PREFIX = "us-gaap";
-
     private static boolean isProductOrService(Concept dimension) {
-        return dimension.getNamespace().getPrefix().equals(SRT_PREFIX) &&
+        return dimension.getNamespace().getPrefix().equals(XbrlNamespaces.SRT_PREFIX) &&
                 dimension.getName().equals("ProductOrServiceAxis");
     }
 
     private static boolean isSegment(Concept dimension) {
-        return dimension.getNamespace().getPrefix().equals(US_GAAP_PREFIX) &&
+        return dimension.getNamespace().getPrefix().equals(XbrlNamespaces.US_GAAP_PREFIX) &&
                 dimension.getName().equals("StatementBusinessSegmentsAxis");
     }
 
@@ -179,7 +178,7 @@ public final class Entity {
         if (scheme != null && !scheme.equals(CIK_STRING)) {
             return "Entity(scheme='" + scheme + '\'' + ", id='" + id + '\'' + ')';
         } else {
-            return "Entity(" + id + ')';
+            return "Entity(" + id + ", " + Joiner.on(", ").join(explicitMembers) + ')';
         }
     }
 }

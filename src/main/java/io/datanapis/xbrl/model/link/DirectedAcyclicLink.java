@@ -42,7 +42,9 @@ public abstract class DirectedAcyclicLink<ArcType extends FromToArc<ArcType>> ex
             }
 
             /* arc potentially already exists in arcs */
-            log.info("Ignoring potentially duplicate arc [{} -> {}]", arc.getFrom().getLabel(), arc.getTo().getLabel());
+            log.debug("Ignoring potentially duplicate arc [{} -> {}]. Existing arc [{} -> {}]",
+                    arc.getFrom().getLabel(), arc.getTo().getLabel(),
+                    value.getFrom().getLabel(), value.getTo().getLabel());
         }
     }
 

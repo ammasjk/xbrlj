@@ -19,6 +19,7 @@ public class XbrlUtils {
     private static final String INSTANCE_URI = "http://www.xbrl.org/2003/instance";
     private static final String LINKBASE_URI = "http://www.xbrl.org/2003/linkbase";
     private static final String ISO4217_URI = "http://www.xbrl.org/2003/iso4217";
+    private static final String DEI_2009_URI = "http://xbrl.us/dei/2009-01-31";
     private static final String DEI_BASE_URI = "http://xbrl.sec.gov/dei/";
     private static final String DEI_2020_URI = "http://xbrl.sec.gov/dei/2020-01-31";
     private static final String DEI_2019_URI = "http://xbrl.sec.gov/dei/2019-01-31";
@@ -46,7 +47,7 @@ public class XbrlUtils {
     }
 
     public static boolean isDei(String uri) {
-        return uri != null && uri.startsWith(DEI_BASE_URI);
+        return uri != null && (uri.startsWith(DEI_2009_URI) || uri.startsWith(DEI_BASE_URI));
     }
 
     public static boolean isIx(String uri) {

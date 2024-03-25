@@ -15,12 +15,14 @@
  */
 package io.datanapis.xbrl.analysis;
 
+import io.datanapis.xbrl.model.Concept;
 import io.datanapis.xbrl.model.DimensionedFact;
 import io.datanapis.xbrl.model.Instant;
 import io.datanapis.xbrl.model.Period;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
+import java.util.Set;
 
 public class PeriodGroup implements Comparable<PeriodGroup> {
     private final Instant start;
@@ -99,8 +101,8 @@ public class PeriodGroup implements Comparable<PeriodGroup> {
             this.end = end;
             return this;
         }
-        public Builder startingFacts(Collection<DimensionedFact> startingFacts) {
-            this.startingFacts = startingFacts;
+        public Builder startingFacts(Collection<DimensionedFact> startingFacts, Set<Concept> filter) {
+            this.startingFacts = startingFacts.stream().filter(df -> filter.contains(df.getFact().getConcept())).toList();
             return this;
         }
         public Builder currentFacts(Collection<DimensionedFact> currentFacts) {

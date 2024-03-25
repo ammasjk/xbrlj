@@ -27,7 +27,7 @@ import java.io.PrintWriter;
 import java.util.*;
 
 public abstract class GraphNode<ArcType extends FromToArc<ArcType>> implements Comparable<GraphNode<ArcType>> {
-    public static final String ABSTRACT = "Abstract";
+    private static final String ABSTRACT = "Abstract";
     private static final String TABLE = "Table";
     private static final String AXIS = "Axis";
     private static final String DOMAIN = "Domain";
@@ -47,10 +47,30 @@ public abstract class GraphNode<ArcType extends FromToArc<ArcType>> implements C
     /* The outLinks from this node */
     private final List<GraphNode<ArcType>> outLinks = new ArrayList<>();
 
-    GraphNode(Concept concept, ArcType arcProperties) {
+    GraphNode(Concept concept, ArcType incoming) {
         this.concept = concept;
-        this.arc = arcProperties;
+        this.arc = incoming;
         this.parent = null;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        GraphNode<?> graphNode = (GraphNode<?>) o;
+        return Objects.equals(concept, graphNode.concept) &&
+                Objects.equals(parent, graphNode.parent) &&
+                Objects.equals(arc, graphNode.arc);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(concept, parent, arc);
+    }
+
+    @Override
+    public String toString() {
+        return concept.getQualifiedName();
     }
 
     public Concept getConcept() {
@@ -59,6 +79,10 @@ public abstract class GraphNode<ArcType extends FromToArc<ArcType>> implements C
 
     public String getQualifiedName() {
         return concept.getQualifiedName();
+    }
+
+    public String getSubstitutionGroup() {
+        return concept.getSubstitutionGroup().getQualifiedName();
     }
 
     public ArcType getArc() {
@@ -75,7 +99,7 @@ public abstract class GraphNode<ArcType extends FromToArc<ArcType>> implements C
     }
 
     public boolean hasChildren() {
-        return outLinks.size() > 0;
+        return !outLinks.isEmpty();
     }
 
     public Collection<GraphNode<ArcType>> getOutLinks() {
@@ -120,6 +144,11 @@ public abstract class GraphNode<ArcType extends FromToArc<ArcType>> implements C
             /* ignore arcs that have parents */
             if (arc.hasParent())
                 continue;
+
+            if (Objects.isNull(arc.getFrom())) {
+                log.info("From attribute of an Arc is null! This is not valid according to the XBRL 2.1 specification. Ignoring Arc!");
+                continue;
+            }
 
             Concept source = dts.getConcept(arc.getFrom().getHref());
             if (source == null) {
@@ -251,66 +280,40 @@ public abstract class GraphNode<ArcType extends FromToArc<ArcType>> implements C
         }
     }
 
-    void displayNode(String prefix, PrintWriter writer) {
-        writer.printf("%s [%s] = [%s] [%s] [%.2f]:\n",
-                prefix, getConcept().getQualifiedName(),
-                getConcept().getBalance().toString(), arc.getArcrole().getArcroleURI(), arc.getOrder());
+    interface NodeProcessor<ArcType extends FromToArc<ArcType>> {
+        void node(int level, GraphNode<ArcType> node);
     }
 
-    void displayNetwork(DisplayStyle style, Deque<GraphNode<ArcType>> parents, int level, PrintWriter writer, int maxDepth) {
+    void displayNode(String prefix, int level, PrintWriter writer) {
+        writer.printf("%s [%d][%s] = [%s] [%s] [%.2f]:\n",
+                prefix, level, getConcept().getQualifiedName(),
+                getConcept().getBalance().toString(), getArc().getArcrole().getArcroleURI(), getArc().getOrder());
+    }
+
+    void displayNetwork(Deque<GraphNode<ArcType>> parents, int level, PrintWriter writer, int maxDepth) {
         if (level > maxDepth)
             return;
 
         String prefix = " ".repeat(level * 4);
         Concept.Balance balance = getConcept().getBalance();
 
-        if (style == DisplayStyle.TREE) {
-            if (arc == null) {
-                writer.printf("%s [%s] = [%s]:\n",
-                        prefix, getConcept().getQualifiedName(), balance.toString());
-            } else {
-                displayNode(prefix, writer);
-            }
+        if (getArc() == null) {
+            writer.printf("%s [%d][%s] = [%s]:\n",
+                    prefix, level, getConcept().getQualifiedName(), balance.toString());
+        } else {
+            displayNode(prefix, level, writer);
         }
 
         for (GraphNode<ArcType> node : this.getOutLinks()) {
             parents.push(node);
-            node.displayNetwork(style, parents, level + 1, writer, maxDepth);
+            node.displayNetwork(parents, level + 1, writer, maxDepth);
             parents.pop();
         }
-
-        if (style == DisplayStyle.LIST) {
-            /* Only output leaf nodes */
-            if (this.getOutLinks().size() == 0) {
-                writer.print(getConcept().getQualifiedName());
-                Iterator<GraphNode<ArcType>> iterator = parents.descendingIterator();;
-                while (iterator.hasNext()) {
-                    writer.print(",");
-                    GraphNode<ArcType> parent = iterator.next();
-                    writer.print(parent.getConcept().getQualifiedName());
-                }
-                writer.println();
-            }
-        }
-    }
-
-    public void displayNetwork(DisplayStyle style, PrintWriter writer) {
-        Deque<GraphNode<ArcType>> deque = new ArrayDeque<>();
-        deque.push(this);
-        displayNetwork(style, deque, 1, writer, Integer.MAX_VALUE);
     }
 
     public void displayNetwork(PrintWriter writer) {
-        displayNetwork(DisplayStyle.TREE, writer);
-    }
-
-    public void displayNetwork(DisplayStyle style, PrintWriter writer, int maxDepth) {
         Deque<GraphNode<ArcType>> deque = new ArrayDeque<>();
         deque.push(this);
-        displayNetwork(style, deque, 1, writer, maxDepth);
-    }
-
-    public void displayNetwork(PrintWriter writer, int maxDepth) {
-        displayNetwork(DisplayStyle.TREE, writer, maxDepth);
+        displayNetwork(deque, 1, writer, Integer.MAX_VALUE);
     }
 }

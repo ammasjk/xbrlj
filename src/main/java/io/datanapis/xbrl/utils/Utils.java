@@ -78,10 +78,13 @@ public class Utils {
 
     public static Collection<String> splitQualifiedName(Concept concept) {
         assert concept != null;
+        return splitQualifiedName(concept.getQualifiedName());
+    }
+
+    public static Collection<String> splitQualifiedName(String qualifiedName) {
 
         List<String> strings = new ArrayList<>();
 
-        String qualifiedName = concept.getQualifiedName();
         int index = qualifiedName.indexOf(':');
         if (index > 0) {
             qualifiedName = qualifiedName.substring(index + 1);
@@ -262,10 +265,6 @@ public class Utils {
         } else {
             list.add(min, element);
         }
-    }
-
-    public static void printStackTrace() {
-        new Exception().printStackTrace();
     }
 
     public static String join(Collection<ExplicitMember> l) {

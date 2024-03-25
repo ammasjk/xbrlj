@@ -54,7 +54,7 @@ public class Counter<T> {
 
     private void add(T key, int value) {
         if (consider(key)) {
-            counter.put(key, counter.getOrDefault(key, 0) + value);
+            counter.merge(key, value, Integer::sum);
         }
     }
 

@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 
 /**
  * DimensionedFact - a fact with dimensions. Dimensions qualify a fact. For example, us-gaap:Revenue can be reported
- * against the business as a whole but it can also be reported for the different operating segments, for the different
+ * against the business as a whole, but it can also be reported for the different operating segments, for the different
  * products, etc. Dimensions help qualify this. The Concept is still us-gaap:Revenue. However, the dimensions will
  * qualify the context this concept is being used in.
  */
@@ -56,11 +56,25 @@ public final class DimensionedFact implements Comparable<DimensionedFact> {
     }
 
     public boolean isQualified() {
-        return (getDimensions() != null && getDimensions().size() > 0) || (getTypedMembers().size() > 0);
+        return (getDimensions() != null && !getDimensions().isEmpty()) || !getTypedMembers().isEmpty();
     }
 
     public static List<DimensionedFact> getDistinctFacts(Collection<DimensionedFact> facts) {
-        return facts.stream().distinct().sorted().collect(Collectors.toList());
+        return facts.stream().sorted().distinct().collect(Collectors.toList());
+    }
+
+    @Override
+    public String toString() {
+        if (!isQualified())
+            return fact.toString();
+
+        String suffix;
+        if (dimensions != null) {
+            suffix = "/[D" + dimensions.size() + "]";
+        } else {
+            suffix = "/[T" + getTypedMembers().size() + "]";
+        }
+        return fact.toString() + suffix;
     }
 
     @Override
@@ -88,14 +102,15 @@ public final class DimensionedFact implements Comparable<DimensionedFact> {
     @Override
     public int compareTo(@NotNull DimensionedFact o) {
         if (dimensions == null) {
-            if (o.dimensions == null || o.dimensions.size() == 0) {
-                return 0;
+            if (o.dimensions == null || o.dimensions.isEmpty()) {
+                return Fact.compare(fact, o.getFact());
             } else {
+                /* left has fewer qualifiers */
                 return -1;
             }
-        } else if (o.dimensions == null) {
-            if (dimensions.size() == 0) {
-                return 0;
+        } else if (o.dimensions == null || o.dimensions.isEmpty()) {
+            if (dimensions.isEmpty()) {
+                return Fact.compare(fact, o.getFact());
             } else {
                 return 1;
             }
@@ -113,11 +128,12 @@ public final class DimensionedFact implements Comparable<DimensionedFact> {
         }
 
         if (i.hasNext()) {
+            /* left has more qualifiers */
             return 1;
         } else if (j.hasNext()) {
             return -1;
         }
 
-        return 0;
+        return Fact.compare(fact, o.getFact());
     }
 }

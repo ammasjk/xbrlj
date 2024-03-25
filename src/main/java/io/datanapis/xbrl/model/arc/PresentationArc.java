@@ -41,7 +41,7 @@ public final class PresentationArc extends FromToArc<PresentationArc> {
     }
 
     public String getPreferredLabelType() {
-        if (preferredLabel == null || preferredLabel.length() == 0)
+        if (preferredLabel == null || preferredLabel.isEmpty())
             return Label.defaultLabelType();
 
         String type = Label.asLabelType(preferredLabel);

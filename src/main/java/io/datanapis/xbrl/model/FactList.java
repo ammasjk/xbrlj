@@ -21,4 +21,17 @@ public class FactList extends ArrayList<Fact> {
     public void sort() {
         this.sort(Fact::compare);
     }
+
+    private void debugSort() {
+        // Useful when debugging contract violated exceptions which can happen
+        try {
+            this.sort(Fact::compare);
+        } catch (Exception e) {
+            System.out.printf("Size: [%d]\n", this.size());
+            for (Fact fact : this) {
+                System.out.printf("%s\n", fact.toString());
+            }
+            throw e;
+        }
+    }
 }

@@ -18,13 +18,13 @@ package io.datanapis.xbrl.model;
 import io.datanapis.xbrl.TagNames;
 import io.datanapis.xbrl.XbrlInstance;
 import io.datanapis.xbrl.utils.IxtTransform;
+import io.datanapis.xbrl.utils.JsonUtils;
 import io.datanapis.xbrl.utils.XmlUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.dom4j.Attribute;
 import org.dom4j.Element;
 import org.dom4j.QName;
 import org.jsoup.Jsoup;
-import org.jsoup.safety.Safelist;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -116,25 +116,63 @@ public final class Fact {
     }
 
     /**
-     * A lose ordering of facts. Recent facts are ordered first. For facts belonging to the same period
+     * A loose ordering of facts. Recent facts are ordered first. For facts belonging to the same period
      * facts are ordered by the fully qualified name of the concept, the decimal value and value in order
      *
      * @param lhs The left fact
      * @param rhs The right fact
-     * @return less then 0, 0 or greater than 0 as lhs is less than, equal to or greater than rhs
+     * @return less than 0, 0 or greater than 0 as lhs is less than, equal to or greater than rhs
      */
     public static int compare(Fact lhs, Fact rhs) {
-        int result = rhs.getContext().getPeriod().compareTo(lhs.getContext().getPeriod());
+        int result = lhs.getConcept().getQualifiedName().compareTo(rhs.getConcept().getQualifiedName());
         if (result != 0)
             return result;
 
-        result = lhs.getConcept().getQualifiedName().compareTo(rhs.getConcept().getQualifiedName());
+        /* Sort by recent period first */
+        result = rhs.getContext().getPeriod().compareTo(lhs.getContext().getPeriod());
         if (result != 0)
             return result;
 
-        result = Integer.compare(rhs.getDecimals(), lhs.getDecimals());
+        result = lhs.getContext().getId().compareTo(rhs.getContext().getId());
         if (result != 0)
             return result;
+
+        /*
+         * Round both to the same precision
+         * Potential issue: We need to compare decimals here since we could have two values with different decimals that are duplicates.
+         * For example, when numbers are large we could have the same value rounded to both millions and 100's of millions. (decimal -6 and -8)
+         * But, since we are not using a consistent decimal we could end-up violating the transitive property of comparison i.e.
+         * a < b and b < c => a < c
+         */
+        int e = Math.min(lhs.decimals, rhs.decimals);
+        double multiplier = 1.0;
+        if (e < 15) {
+            multiplier = Math.pow(10, e);
+        }
+
+        /* Either both units are null or both have the same value */
+        double v1 = Double.NaN;
+        double v2 = Double.NaN;
+        if (lhs.longValue != null) {
+            v1 = lhs.longValue * multiplier;
+        } else if (lhs.doubleValue != null) {
+            v1 = lhs.doubleValue * multiplier;
+        }
+
+        if (!Double.isNaN(v1)) {
+            if (rhs.longValue != null) {
+                v2 = rhs.longValue * multiplier;
+            } else if (rhs.doubleValue != null) {
+                v2 = rhs.doubleValue * multiplier;
+            }
+            if (!Double.isNaN(v2)) {
+                if (lhs.decimals < 0 && rhs.decimals < 0) {
+                    return Long.compare(Math.round(v1), Math.round(v2));
+                } else {
+                    return Double.compare(v1, v2);
+                }
+            }
+        }
 
         return compareStringValue(lhs, rhs);
     }
@@ -209,24 +247,53 @@ public final class Fact {
 
         Fact fact = (Fact) o;
 
-        if (decimals != fact.decimals) return false;
-        if (nil != fact.nil) return false;
-        if (!concept.equals(fact.concept)) return false;
-        if (!context.equals(fact.context)) return false;
+        if (!concept.equals(fact.concept))
+            return false;
+        if (!context.equals(fact.context))
+            return false;
+        if (nil != fact.nil)
+            return false;
 
-        if (unit == null) {
-            return fact.unit == null;
-        } else {
-            return unit.equals(fact.unit);
+        /* Round both to the same precision */
+        int e = Math.min(decimals, fact.decimals);
+        double multiplier = 1.0;
+        if (e < 15) {
+            multiplier = Math.pow(10, e);
         }
+
+        /* Either both units are null or both have the same value */
+        double v1 = Double.NaN;
+        double v2 = Double.NaN;
+        if (longValue != null) {
+            v1 = longValue * multiplier;
+        } else if (doubleValue != null) {
+            v1 = doubleValue * multiplier;
+        }
+
+        if (!Double.isNaN(v1)) {
+            if (fact.longValue != null) {
+                v2 = fact.longValue * multiplier;
+            } else if (fact.doubleValue != null) {
+                v2 = fact.doubleValue * multiplier;
+            }
+            if (decimals < 0 && fact.decimals < 0) {
+                return Math.round(v1) == Math.round(v2);
+            } else {
+                return Double.compare(v1, v2) == 0;
+            }
+        }
+
+        return value.compareTo(fact.value) == 0;
     }
 
     @Override
     public int hashCode() {
+        /*
+         * If two objects are equals, then their hashCode must match.
+         */
         int result = concept.hashCode();
         result = 31 * result + context.hashCode();
         result = 31 * result + (unit != null ? unit.hashCode() : 0);
-        result = 31 * result + decimals;
         result = 31 * result + (nil ? 1 : 0);
         return result;
     }
@@ -239,8 +306,8 @@ public final class Fact {
         } else if (doubleValue != null) {
             factValue = String.format("%.2f", doubleValue);
         }
-        return String.format("[%s][%s] = [%s] (%s.%s/%s/%s)", concept.getQualifiedName(), context.getPeriod().toString(),
-                factValue, concept.getType().getName(), unit, concept.getBalance(), concept.getPeriod());
+        return String.format("[%s][%s] = [%s/%d] (%s.%s/%s/%s)", concept.getQualifiedName(), context.getPeriod().toString(),
+                factValue, decimals, concept.getType().getName(), unit, concept.getBalance(), concept.getPeriod());
     }
 
     public static Fact fromElement(XbrlInstance instance, Element element) {
@@ -302,7 +369,7 @@ public final class Fact {
                         try {
                             fact.decimals = Integer.parseInt(value);
                         } catch (NumberFormatException e) {
-                            e.printStackTrace();
+                            log.info("Invalid value for decimals attribute [{}]", value);
                         }
                     } else {
                         fact.decimals = Integer.MAX_VALUE;
@@ -313,7 +380,7 @@ public final class Fact {
                     try {
                         scale = Integer.parseInt(scaleValue);
                     } catch (NumberFormatException e) {
-                        e.printStackTrace();
+                        log.info("Invalid value for scale attribute [{}]", scaleValue);
                     }
                     break;
                 case TagNames.NIL_TAG:
@@ -323,7 +390,7 @@ public final class Fact {
                     format = attribute.getValue();
                     break;
                 case TagNames.NAME_TAG:
-                    /* Name attribute is only present for iXBRL elements but is handled separately */
+                    /* Name attribute represents the XBRL Concept and is only present for iXBRL elements but is handled separately */
                     break;
                 case TagNames.SIGN_TAG:
                     if (!attribute.getValue().equals("-")) {
@@ -348,7 +415,7 @@ public final class Fact {
         }
 
         /*
-         * id's are null sometimes. Fact id's are not that critical for correctness. However, id's are used to
+         * ids are null sometimes. Fact ids are not that critical for correctness. However, ids are used to
          * connect facts to footnotes. Having null id's means that several parts of the code will need to deal
          * with it. Hence, generating a random id for now.
          */
@@ -366,10 +433,10 @@ public final class Fact {
 
         String conceptName = fact.getConcept().getQualifiedName();
 
-        /* An ix:nonFraction element can sometimes can sometimes contain another ix:nonFraction element - see iXBRL specification */
+        /* An ix:nonFraction element can sometimes contain another ix:nonFraction element - see iXBRL specification */
         if (valueFact == null) {
             String elementContent;
-            if (elements.size() > 1 && format == null) {
+            if (fact.getConcept().isText() || (elements.size() > 1 && format == null)) {
                 elementContent = XmlUtils.asXML(elements);
             } else if (elements.size() > 1) {
                 elementContent = XmlUtils.asString(elements);
@@ -382,7 +449,7 @@ public final class Fact {
             if (format != null) {
                 fact.value = IxtTransform.transformWithFormat(format, elementContent);
             } else {
-                fact.value = Jsoup.clean(elementContent, Safelist.relaxed());    /* Use relaxed list to not skip tables */
+                fact.value = Jsoup.clean(elementContent, JsonUtils.relaxed());    /* Use relaxed list to not skip tables */
             }
 
             if (element.getName().equals(TagNames.NON_NUMERIC_TAG)) {

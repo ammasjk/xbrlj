@@ -117,7 +117,7 @@ public class XmlUtils {
     public static String asXML(List<Element> elements) {
         StringBuilder builder = new StringBuilder();
         for (Element element : elements) {
-            builder.append(element.asXML());
+            builder.append(asXML(element));
         }
         return builder.toString();
     }

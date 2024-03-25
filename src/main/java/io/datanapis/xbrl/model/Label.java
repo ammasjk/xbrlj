@@ -43,6 +43,17 @@ public final class Label {
     public static final String ROLE_TYPE_PERIOD_START_LABEL = "http://www.xbrl.org/2003/role/periodStartLabel";
     public static final String ROLE_TYPE_PERIOD_END_LABEL = "http://www.xbrl.org/2003/role/periodEndLabel";
 
+    public static final String ROLE_TYPE_POSITIVE_LABEL = "http://www.xbrl.org/2003/role/positiveLabel";
+    public static final String ROLE_TYPE_POSITIVE_TERSE_LABEL = "http://www.xbrl.org/2003/role/positiveTerseLabel";
+    public static final String ROLE_TYPE_POSITIVE_VERBOSE_LABEL = "http://www.xbrl.org/2003/role/positiveVerboseLabel";
+    public static final String ROLE_TYPE_NEGATIVE_LABEL = "http://www.xbrl.org/2003/role/negativeLabel";
+    public static final String ROLE_TYPE_NEGATIVE_TERSE_LABEL = "http://www.xbrl.org/2003/role/negativeTerseLabel";
+    public static final String ROLE_TYPE_NEGATIVE_VERBOSE_LABEL = "http://www.xbrl.org/2003/role/negativeVerboseLabel";
+    public static final String ROLE_TYPE_ZERO_LABEL = "http://www.xbrl.org/2003/role/zeroLabel";
+    public static final String ROLE_TYPE_ZERO_TERSE_LABEL = "http://www.xbrl.org/2003/role/zeroTerseLabel";
+    public static final String ROLE_TYPE_ZERO_VERBOSE_LABEL = "http://www.xbrl.org/2003/role/zeroVerboseLabel";
+
+
     /* 2009 types */
     public static final String ROLE_TYPE_DEPRECATED_LABEL = "http://www.xbrl.org/2009/role/deprecatedLabel";
     public static final String ROLE_TYPE_DEPRECATED_DATE_LABEL = "http://www.xbrl.org/2009/role/deprecatedDateLabel";
@@ -75,7 +86,9 @@ public final class Label {
     public static final String VERBOSE = "VERBOSE";
     public static final String PERIOD_START = "PERIOD-START";
     public static final String PERIOD_END = "PERIOD-END";
+    public static final String POSITIVE = "POSITIVE";
     public static final String RESTATED = "RESTATED";
+    public static final String ZERO = "ZERO";
 
     public static final String NEGATED_TERSE_LABEL = join(NEGATED, TERSE);
     public static final String NEGATED_TOTAL_LABEL = join(NEGATED, TOTAL);
@@ -102,18 +115,27 @@ public final class Label {
                     .put(ROLE_TYPE_PERIOD_END_LABEL,                  PERIOD_END)
                     .put(ROLE_TYPE_NEGATED_PERIOD_END_LABEL,          join(NEGATED, PERIOD_END))
                     .put(ROLE_TYPE_NEGATIVE_PERIOD_END_LABEL,         join(NEGATIVE, PERIOD_END))
-                    .put(ROLE_TYPE_POSITIVE_PERIOD_END_LABEL,         PERIOD_END)
+                    .put(ROLE_TYPE_POSITIVE_PERIOD_END_LABEL,         join(POSITIVE, PERIOD_END))
                     .put(ROLE_TYPE_NEGATED_TOTAL_LABEL,               join(NEGATED, TOTAL))
                     .put(ROLE_TYPE_NEGATED_US,                        NEGATED)
                     .put(ROLE_TYPE_NEGATIVE_PERIOD_END_TOTAL_LABEL,   join(NEGATIVE, PERIOD_END, TOTAL))
                     .put(ROLE_TYPE_NEGATIVE_PERIOD_START_TOTAL_LABEL, join(NEGATIVE, PERIOD_START, TOTAL))
-                    .put(ROLE_TYPE_POSITIVE_PERIOD_START_TOTAL_LABEL, join(PERIOD_START, TOTAL))
-                    .put(ROLE_TYPE_POSITIVE_PERIOD_END_TOTAL_LABEL,   join(PERIOD_END, TOTAL))
+                    .put(ROLE_TYPE_POSITIVE_LABEL,                    POSITIVE)
+                    .put(ROLE_TYPE_POSITIVE_PERIOD_START_TOTAL_LABEL, join(POSITIVE, PERIOD_START, TOTAL))
+                    .put(ROLE_TYPE_POSITIVE_PERIOD_END_TOTAL_LABEL,   join(POSITIVE, PERIOD_END, TOTAL))
+                    .put(ROLE_TYPE_POSITIVE_TERSE_LABEL,              join(POSITIVE, TERSE))
+                    .put(ROLE_TYPE_POSITIVE_VERBOSE_LABEL,            join(POSITIVE, VERBOSE))
                     .put(ROLE_TYPE_RESTATED_LABEL,                    RESTATED)
                     .put(ROLE_TYPE_DEPRECATED_LABEL,                  DEPRECATED)
                     .put(ROLE_TYPE_NEGATED_PERIOD_END_US,             join(NEGATED, PERIOD_END))
                     .put(ROLE_TYPE_NEGATED_PERIOD_START_US,           join(NEGATED, PERIOD_START))
                     .put(ROLE_TYPE_NEGATED_TOTAL_US,                  join(NEGATED, TOTAL))
+                    .put(ROLE_TYPE_NEGATIVE_LABEL,                    NEGATIVE)
+                    .put(ROLE_TYPE_NEGATIVE_TERSE_LABEL,              join(NEGATIVE, TERSE))
+                    .put(ROLE_TYPE_NEGATIVE_VERBOSE_LABEL,            join(NEGATIVE, VERBOSE))
+                    .put(ROLE_TYPE_ZERO_LABEL,                        ZERO)
+                    .put(ROLE_TYPE_ZERO_TERSE_LABEL,                  join(ZERO, TERSE))
+                    .put(ROLE_TYPE_ZERO_VERBOSE_LABEL,                join(ZERO, VERBOSE))
                     .build();
 
     public static String asLabelType(String roleType) {
@@ -207,6 +229,10 @@ public final class Label {
 
     public boolean isNegated() {
         return is(NEGATED);
+    }
+
+    public boolean isTotal() {
+        return is(TOTAL);
     }
 
     public String getType() {
